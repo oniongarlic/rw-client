@@ -1,6 +1,6 @@
-import QtQuick 2.9
-import QtQuick.Window 2.2
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Window 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 import net.ekotuki 1.0
 
@@ -14,9 +14,9 @@ Page {
     property bool landscape: height<width
 
     property bool toolsEnabled: true
-    property bool editEnabled: false
+    property bool editEnabled: api.hasRole("products")
     property bool cartDisabled: false
-    property bool cartEnabled: api.hasRole("order") && !cartDisabled
+    property bool cartEnabled: api.hasRole("cart") && !cartDisabled
 
     Keys.onReleased: {
         if (event.key === Qt.Key_Back) {
@@ -38,18 +38,19 @@ Page {
                 visible: enabled
                 enabled: editEnabled
                 onClicked: {
-                    rootStack.push(productEdit)
+                    rootStack.push(productEdit, { "product": product, "locationsModel": api.getLocationsModel() })
                 }
             }
             ToolButton {
                 text: qsTr("Add to cart")
-                visible: enabled
-                enabled: cartEnabled
+                icon.source: "qrc:/images/icon_cart.png"
+                visible: cartEnabled
+                enabled: cartEnabled && product.stock>0
                 onClicked: {
                     if (!api.addToCart(product.barcode, 1)) {
                         messagePopup.show(qsTr("Cart error"), qsTr("Failed to add product to cart"))
                     } else {
-
+                        editEnabled=false;
                     }
                 }
             }
@@ -59,7 +60,40 @@ Page {
     Component {
         id: productEdit
         PageProductEdit {
+            id: modifyPage
             product: productView.product
+            keepImages: true
+            addMoreEnabled: false            
+
+            onRequestProductSave: {
+                console.debug("*** Product update save")
+                product=modifyPage.fillProduct(product);
+
+                console.debug(product.getAttributes())
+
+                console.debug("*** Updating product to API")
+                var rs=api.updateProduct(product);
+                if (rs)
+                    modifyPage.saveInProgress();
+                else
+                    modifyPage.saveFailed();
+            }
+
+            Connections {
+                target: api
+                onProductSaved: {
+                    if (modifyPage.confirmProductSave(true, null, "")) {
+
+                    }
+                }
+                onProductFail: {
+                    modifyPage.confirmProductSave(false, null, msg);
+                }
+            }
+
+            Component.onCompleted: {
+                api.getLocationsModel().clearFilter();
+            }
         }
     }
 
@@ -136,7 +170,8 @@ Page {
             id: f
             clip: true
             contentHeight: c.height
-            width: productView.width
+            //contentWidth: c.width
+            //width: productView.width
             flickableDirection: Flickable.VerticalFlick
             Layout.fillWidth: true
             Layout.fillHeight: true
@@ -147,19 +182,19 @@ Page {
                 id: c
                 Layout.alignment: Qt.AlignTop | Qt.AlignLeft
                 width: parent.width
+                spacing: 4
 
                 RowLayout {
                     id: imageRow
-                    Layout.minimumHeight: productView.height/2
+                    Layout.minimumHeight: productView.height/3
                     Layout.maximumHeight: productView.height/1.5
-                    width: parent.width
-                    Layout.fillHeight: true
+                    Layout.fillHeight: true                    
 
                     ListView {
                         id: productImagesList
                         clip: true
                         Layout.fillWidth: true
-                        Layout.minimumHeight: productView.height/2
+                        Layout.minimumHeight: productView.height/3
                         Layout.maximumHeight: productView.height/1.4
                         orientation: ListView.Horizontal
                         model: productImagesModel
@@ -167,7 +202,6 @@ Page {
                         snapMode: ListView.SnapOneItem
                         highlightRangeMode: ListView.StrictlyEnforceRange
                         ScrollIndicator.horizontal: ScrollIndicator { }
-
                         PageIndicator {
                             count: productImagesList.model.count
                             currentIndex: productImagesList.currentIndex
@@ -185,8 +219,8 @@ Page {
                             Image {
                                 id: thumbnail
                                 asynchronous: true
-                                sourceSize.width: 512
-                                anchors.fill: parent                                                              
+                                sourceSize.width: 1024
+                                anchors.fill: parent
                                 //fillMode: Image.PreserveAspectCrop
                                 fillMode: Image.PreserveAspectFit
                                 source: api.getImageUrl(productImage)
@@ -195,8 +229,8 @@ Page {
                                 MouseArea {
                                     anchors.fill: parent
                                     enabled: thumbnail.status==Image.Ready
-                                    onClicked: {                                        
-                                        rootStack.push(imageDisplayPageComponent, { image: thumbnail.source })                                        
+                                    onClicked: {
+                                        rootStack.push(imageDisplayPageComponent, { image: thumbnail.source })
                                     }
                                     onPressAndHold: {
 
@@ -214,34 +248,39 @@ Page {
                     }
                 }
 
-                Pane {
-                    //title: "Product description"
+                Frame {
                     visible: product.description!==''
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    Text {
-                        id: productDescription
-                        Layout.fillWidth: true
-                        text: product.description
-                        maximumLineCount: 10
-                        MouseArea {
-                            anchors.fill: parent
-                            onClicked: {
-
+                    Layout.margins: 8
+                    ColumnLayout {
+                        width: parent.width
+                        Text {
+                            Layout.fillWidth: true
+                            id: productDescription
+                            text: product.description
+                            maximumLineCount: 3
+                            anchors.margins: 16
+                            font.pixelSize: 18
+                            wrapMode: Text.WordWrap
+                            elide: Text.ElideRight
+                            textFormat: Text.PlainText                            
+                            MouseArea {
+                                anchors.fill: parent
+                                onClicked: {
+                                    productDescription.maximumLineCount=(productDescription.maximumLineCount==3 ? undefined : 3);
+                                }
                             }
                         }
                     }
                 }
 
-                Pane {
+                Frame {
                     id: attributes
-                    // title: qsTr("Product attributes")
-                    visible: product.hasAttributes();
                     Layout.fillWidth: true
-                    Layout.fillHeight: true
+                    Layout.margins: 8
+                    visible: product.hasAttributes();
                     ColumnLayout {
-                        Layout.alignment: Qt.AlignTop
-                        Layout.fillWidth: true
+                        width: parent.width
                         DetailItem {
                             label: qsTr("Price")
                             visible: product.price>0
@@ -250,17 +289,23 @@ Page {
                         DetailItem {
                             label: qsTr("Added")
                             //visible: product.price>0
-                            value: product.getCreated();
+                            value: product.getCreated().toLocaleDateString();
+                        }
+                        DetailItem {
+                            label: qsTr("Modified")
+                            visible: product.getCreated()<product.getModified()
+                            value: product.getModified().toLocaleDateString();
                         }
                         DetailItem {
                             label: qsTr("Stock")
-                            visible: product.stock!=1
+                            visible: product.stock>0
                             value: product.stock
                         }
+                        // Physical size display, in Width/Depth/Height order
                         DetailItem {
-                            label: qsTr("Size (WxHxD)")
+                            label: qsTr("Size (WxDxH)")
                             visible: product.hasAttribute("depth") && product.hasAttribute("width") && product.hasAttribute("height")
-                            value: product.getAttribute("width")+"cm x " + product.getAttribute("height")+"cm x " + product.getAttribute("depth")+"cm"
+                            value: product.getAttribute("width")+"cm x " + product.getAttribute("depth")+"cm x " + product.getAttribute("height")+"cm"
                         }
                         DetailItem {
                             label: qsTr("Weight")
@@ -271,7 +316,29 @@ Page {
                         DetailItem {
                             label: qsTr("Color");
                             visible: product.hasAttribute("color")
-                            value: product.getAttribute("color") // XXX
+                            value: "" // getColorString(product.getAttribute("color"))
+                            function getColorString(ca) {
+                                console.debug(ca)
+                                if (!ca)
+                                    return 'N/A'
+                                else
+                                    return ca.join(); // XXX
+                            }
+                            Repeater {
+                                id: colorRepeater
+                                model: product.getAttribute("color")
+                                delegate: Rectangle {
+                                    width: 20
+                                    height: 20
+                                    color: colorRepeater.getColorCode(modelData)
+                                }
+                                function getColorCode(cid) {
+                                    var c=api.getColorModel().getKey(cid);
+                                    if (c)
+                                        return c.code;
+                                    return '';
+                                }
+                            }
                         }
                         DetailItem {
                             label: qsTr("EAN")
@@ -282,6 +349,16 @@ Page {
                             label: qsTr("ISBN")
                             visible: product.hasAttribute("isbn")
                             value: product.getAttribute("isbn")
+                        }
+                        DetailItem {
+                            label: qsTr("Manufacturer")
+                            visible: product.hasAttribute("manufacturer")
+                            value: product.getAttribute("manufacturer")
+                        }
+                        DetailItem {
+                            label: qsTr("Model")
+                            visible: product.hasAttribute("model")
+                            value: product.getAttribute("model")
                         }
                     }
                 }

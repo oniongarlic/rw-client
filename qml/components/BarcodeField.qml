@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 TextField {
@@ -9,12 +9,15 @@ TextField {
     selectByMouse: true
     leftPadding: 4
     rightPadding: 4
-    inputMethodHints: Qt.ImhUppercaseOnly // | Qt.ImhPreferNumbers
+    inputMethodHints: Qt.ImhUppercaseOnly | Qt.ImhNoPredictiveText // | Qt.ImhPreferNumbers
     //inputMask: ">AAA999999999"
     validator: RegExpValidator { regExp: /[A-Z]{3}[0-9]{6,9}/ }
+
+    property bool isOptional : false;
+
     background: Rectangle {
         color: "transparent"
-        border.color: barcodeText.acceptableInput ? "green" : "red"
+        border.color: barcodeText.acceptableInput ? "green" : (isOptional ? "yellow" :  "red")
     }
     onPressAndHold: {
         clear()

@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 import "../components"
@@ -10,11 +10,13 @@ Page {
     title: qsTr("Login")
 
     property bool loginActive: false
+    property string organization;
     property alias username: textUsername.text
     property alias password: textPassword.text
 
-    signal loginRequested(string username, string password)
+    property bool canLogin: root.home!='' && textUsername.acceptableInput && textPassword.acceptableInput
 
+    signal loginRequested(string username, string password)
     signal loginCanceled()
 
     header: ToolbarBasic {
@@ -22,6 +24,12 @@ Page {
         enableBackPop: true
         enableMenuButton: false
         visibleMenuButton: false
+    }
+
+    onOrganizationChanged: {
+        var m=api.getOrganizationModel();
+        var i=m.indexKey(organization);
+        orgSelector.currentIndex=i;
     }
 
     Keys.onReleased: {
@@ -42,7 +50,7 @@ Page {
         loginActive=false;
     }
 
-    function reportLoginFailed(msg) {        
+    function reportLoginFailed(msg) {
         loginStopped();
     }
 
@@ -63,13 +71,13 @@ Page {
             fillMode: Image.PreserveAspectCrop
             anchors.fill: parent
             opacity: 0.4
-            source: "qrc:/images/bg/bg.jpg"
+            source: root.imageBackground
         }
     }
 
     MessagePopup {
         id: messagePopup
-    }       
+    }
 
     Flickable {
         anchors.fill: parent
@@ -83,7 +91,7 @@ Page {
             spacing: 8
             anchors.margins: 8
 
-            ColumnLayout {                
+            ColumnLayout {
                 Layout.alignment: Qt.AlignTop
                 Layout.fillWidth: true
                 Layout.margins: 8
@@ -101,6 +109,43 @@ Page {
                         //visible: text!=""
                         Layout.fillWidth: true
                     }
+
+                    Label {
+                        text: qsTr("Organization")
+                        Layout.alignment: Qt.AlignHCenter
+                    }
+                    ComboBoxLabel {
+                        id: orgSelector                        
+                        textRole: "name"
+                        placeHolder: qsTr("Select organization")
+                        enabled: !loginActive
+                        model: api.orgModel
+                        Layout.fillWidth: true
+                        onActivated: {
+                            var tmp=model.get(currentIndex);                            
+                            root.setOrganization(tmp);
+                        }                        
+                        Component.onDestruction: model=undefined; // Note: We must clear it, otherwise fails second time around
+                        Component.onCompleted: {
+                            var i=model.indexKey(root.home);
+                            currentIndex=i-1;
+                        }
+                    }
+
+                    Button {
+                        visible: !api.authenticated && root.apiRegistrationUrl!='' && !loginActive
+                        text: qsTr("Register")
+                        Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
+                        onClicked: {
+                            Qt.openUrlExternally(root.apiRegistrationUrl)
+                        }
+                    }
+
+                    ToolSeparator {
+                        orientation: Qt.Horizontal
+                        Layout.fillWidth: true
+                    }
+
                     Label {
                         text: qsTr("Username")
                         Layout.alignment: Qt.AlignHCenter
@@ -108,12 +153,13 @@ Page {
                     TextField {
                         id: textUsername
                         Layout.alignment: Qt.AlignHCenter
-                        enabled: !loginActive
+                        enabled: !loginActive && root.home!=''
                         placeholderText: qsTr("Your username")
-                        focus: true
+                        focus: true                        
                         inputMethodHints: Qt.ImhNoAutoUppercase | Qt.ImhNoPredictiveText | Qt.ImhEmailCharactersOnly
                         maximumLength: 64
-                        Layout.fillWidth: false
+                        padding: 4
+                        Layout.fillWidth: true
                         Layout.fillHeight: false;
                         validator: RegExpValidator {
                             regExp: /.+/
@@ -122,6 +168,11 @@ Page {
                         onAccepted: {
                             textPassword.forceActiveFocus();
                         }
+                        background: Rectangle {
+                            color: parent.enabled ? "#ffffff" : "#353535"
+                            border.color: parent.focus ? "#20ae20" : "#000000"
+                            border.width: 1
+                        }
                     }
                     Label {
                         text: qsTr("Password")
@@ -129,12 +180,13 @@ Page {
                     }
                     TextField {
                         id: textPassword
-                        enabled: !loginActive
+                        enabled: textUsername.enabled
                         maximumLength: 32
                         placeholderText: qsTr("Your Password")
                         Layout.alignment: Qt.AlignHCenter
-                        Layout.fillWidth: false
+                        Layout.fillWidth: true
                         Layout.fillHeight: false;
+                        padding: 4
                         echoMode: TextInput.Password
                         validator: RegExpValidator {
                             regExp: /.+/
@@ -143,14 +195,19 @@ Page {
                         onAccepted: {
                             doLogin();
                         }
+                        background: Rectangle {
+                            color: parent.enabled ? "#ffffff" : "#353535"
+                            border.color: parent.focus ? "#20ae20" : "#000000"
+                            border.width: 1
+                        }
                     }
                     ColumnLayout {
-                        Layout.fillWidth: false;
+                        Layout.fillWidth: true;
                         Layout.alignment: Qt.AlignHCenter
                         Button {
                             text: qsTr("Login")
                             Layout.fillWidth: true;
-                            enabled: textUsername.acceptableInput && textPassword.acceptableInput && !loginActive
+                            enabled: canLogin && !loginActive
                             onClicked: {
                                 doLogin();
                             }

@@ -7,8 +7,8 @@
  * XXX!!!
  * Re-think handling of Product, perhaps instead use a empty product and bind the properties, with a isValid flag ?
  */
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Dialogs 1.2
 import QtQuick.Layouts 1.3
 import net.ekotuki 1.0
@@ -56,8 +56,9 @@ Page {
     property bool categoryHasMakeAndModel: categoryFlags & CategoryModel.HasMakeAndModel
     property bool categoryHasAuthor: categoryFlags & CategoryModel.HasAuthor
 
-    property bool hasTax: true
-    property bool hasLocation: true
+    property bool categoryHasTax: true
+    property bool categoryHasLocation: true
+    property bool categoryHasLocationDetail: true
 
     property int defaultWarehouse;
 
@@ -83,9 +84,13 @@ Page {
     property int purposeID: 0
     property string colorID: ""
 
-    property string colorsIdentifiers: productColor.colorID+";"+productColor2.colorID+";"+productColor3.colorID
+    property string colorsIdentifiers: makeColorIdentified(productColor.colorID, productColor2.colorID, productColor3.colorID);
 
-    onColorsIdentifiersChanged: console.debug(colorsIdentifiers)
+    function makeColorIdentified(c1,c2,c3) {
+        if (c1=='')
+            return '';
+        return c1+";"+c2+";"+c3;
+    }
 
     property int locationID;
     property string locationDetail: ""   
@@ -100,12 +105,16 @@ Page {
     // Ask to add more similar items
     property bool addMoreEnabled: true
 
+    property variant colorEditors: []
+
     // The requestProductSave() handler should call this function to signal if the operation was a success or not
     function confirmProductSave(saved, product, msg) {
         isSaving=false;
-        if (saved) {
-            savingPopup.close();
-            if (addMoreEnabled) {
+        savingPopup.close();
+
+        if (saved) {            
+            // Ask for more only if it was a new product
+            if (addMoreEnabled && !hasProduct) {
                 addMoreProducts.open();
                 return false;
             }
@@ -114,9 +123,23 @@ Page {
             return true;
         }
         console.debug("*** Saved failed")
-        messagePopup.show(qsTr("Saving failed"),msg, 500); //XXX
-        savingPopup.close();
+        messagePopup.show(qsTr("Saving failed"), msg, 500); //XXX
+
         return false;
+    }
+
+    Component.onCompleted: {        
+        colorEditors[0]=productColor;
+        colorEditors[1]=productColor2;
+        colorEditors[2]=productColor3;
+
+        if (product) {
+            if (populateProduct(product)==false) {
+                messagePopup.show(qsTr("Internal error"), qsTr("Failed to populate product fields"), 0);
+            }
+        }
+
+        barcodeText.forceActiveFocus();
     }
 
     onLocationIDChanged: {
@@ -131,13 +154,13 @@ Page {
 
         if (defaultWarehouse!=0) {
             var i=locationsModel.findLocationByID(defaultWarehouse);
-            console.debug(i)
+            console.debug("Location index is: "+i)
             if (i>-1) {
                 locationPopup.currentIndex=i;
                 locationID=defaultWarehouse;
             }
         }
-    }
+    }        
 
     function saveInProgress() {
         isSaving=true;
@@ -157,25 +180,32 @@ Page {
         switch (event.key) {
         case Qt.Key_F1:
             event.accepted = true;
-            editorSwipeView.currentIndex=0;
+            editorSwipeView.setCurrentIndex(0);
             break;
         case Qt.Key_F2:
             event.accepted = true;
-            editorSwipeView.currentIndex=1;
+            editorSwipeView.setCurrentIndex(1);
             break;
         case Qt.Key_F3:
             event.accepted = true;
-            editorSwipeView.currentIndex=2;
+            editorSwipeView.setCurrentIndex(2);
             break;
         case Qt.Key_F4:
             event.accepted = true;
-            editorSwipeView.currentIndex=3;
+            editorSwipeView.setCurrentIndex(3);
             break;
         case Qt.Key_Escape:
+            console.log("*** ESC")
+            event.accepted = true;
+            confirmBackDialog.open();
+            break;
         case Qt.Key_Back:
             console.log("*** Back button")
             event.accepted = true;
-            confirmBackDialog.open();
+            if (editorSwipeView.currentIndex>0)
+                editorSwipeView.decrementCurrentIndex();
+            else
+                confirmBackDialog.open();
             break;
         case Qt.Key_Camera:
             event.accepted = true;
@@ -185,6 +215,11 @@ Page {
         }
     }
 
+    onValidValueChanged: {
+        console.debug("*** ValidValue: "+validValue)
+        console.debug(productValue.price)
+    }
+
     header: ToolbarBasic {
         enableBackPop: false
         onBackButton: {
@@ -192,9 +227,10 @@ Page {
         }
         enableActionButton: validEntry && !isSaving
         visibleActionButton: true
-        actionIcon: "qrc:/images/icon_down_box.png"
+        //actionIcon: "qrc:/images/icon_down_box.png"
+        actionText: qsTr("Save")
         onActionButton: {
-            bar.currentIndex=0
+            editorSwipeView.setCurrentIndex(0);
             confirmDialog.open();
         }
     }
@@ -229,6 +265,25 @@ Page {
         }
     }
 
+    MessageDialog {
+        id: confirmDialog
+        icon: StandardIcon.Question
+        standardButtons: StandardButton.Save | StandardButton.Cancel
+        title: qsTr("Save product ?")
+        text: qsTr("Save product:")
+        informativeText: productTitle.text
+
+        onAccepted: {
+            console.debug("*** Save accepted");
+            confirmDialog.close();
+            requestProductSave();
+        }
+
+        onRejected: {
+            console.debug("*** Save canceled");
+        }
+    }
+
     MessagePopup {
         id: messagePopup
     }
@@ -247,7 +302,7 @@ Page {
 
     onCategorySubIDChanged: {
         console.debug(categorySubID)
-    }
+    }        
 
     Component {
         id: pictureCamera
@@ -262,7 +317,48 @@ Page {
             }
             onImageCaptured: {
                 imageModel.addImage("file:/"+path, Product.CameraSource);
-                rootStack.pop();
+                if (imageModel.count<maxImages) {
+                    captureAnimation.start()
+                } else {
+                    rootStack.pop();
+                }
+            }
+            Row {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 16
+                Text {
+                    id: captureCount
+                    text: imageModel.count+"/"+maxImages
+                    style: Text.Outline
+                    verticalAlignment: Text.AlignVCenter
+                    horizontalAlignment: Text.AlignHCenter
+                    font.pixelSize: 26
+                    color: imageModel.count<maxImages-1 ? "white" : "yellow"
+                    opacity: 0.9
+                    transformOrigin: Item.Center
+                    SequentialAnimation {
+                        id: captureAnimation
+                        ScaleAnimator {
+                            target: captureCount
+                            from: 1
+                            to: 1.5
+                            duration: 300
+                            easing.type: Easing.InOutElastic;
+                            easing.amplitude: 2.0;
+                            easing.period: 1.2
+                        }
+                        ScaleAnimator {
+                            target: captureCount
+                            from: 1.5
+                            to: 1
+                            duration: 200
+                            easing.type: Easing.InOutElastic;
+                            easing.amplitude: 2.0;
+                            easing.period: 1.4
+                        }
+                    }
+                }
             }
         }
     }
@@ -320,33 +416,21 @@ Page {
                 // Basedata
                 TabButton {
                     background: Rectangle {
-                        color: validBaseEntry ? "#19e600" : "red"
-                        border.width: 2
-                        radius: 4
+                        color: validBaseEntry ? "#19e600" : "#b92929"
                     }
-                    icon.source: "qrc:/images/icon_home.png"                    
+                    icon.source: "qrc:/images/icon_home.png"
                 }
                 // Images
                 TabButton {
                     background: Rectangle {
-                        color: hasImages ? "#19e600" : "red"
-                        border.color: "#000"
-                        border.width: 1
-                        radius: 4
+                        color: hasImages ? "#19e600" : "#b92929"
                     }
-                    icon.source: "qrc:/images/icon_camera.png"                    
-                    onClicked: {
-                        console.debug("Camera clicked: "+editorSwipeView.currentIndex)                        
-                    }
-
+                    icon.source: "qrc:/images/icon_camera.png"
                 }                
                 // Attributes
                 TabButton {
                     background: Rectangle {
                         color: validAttributes ? "#19e600" : "#d9e006"
-                        border.color: "#000"
-                        border.width: 1
-                        radius: 4
                     }
                     icon.source: "qrc:/images/icon_tag.png"                    
                 }
@@ -354,9 +438,6 @@ Page {
                 TabButton {
                     background: Rectangle {
                         color: "#19e600"
-                        border.color: "#000"
-                        border.width: 1
-                        radius: 4
                     }
                     icon.source: "qrc:/images/icon_plus.png"                    
                 }
@@ -368,12 +449,7 @@ Page {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.alignment: Qt.AlignTop
-                currentIndex: bar.currentIndex
-                onCurrentIndexChanged: {
-                    console.debug("CurrentViewIndex: "+currentIndex)
-                    // bar.currentIndex=currentIndex
-                }
-
+                currentIndex: bar.currentIndex                
 
                 ScrollView {
                     id: basicDataSV
@@ -444,17 +520,39 @@ Page {
                                 invalidIndex: 0
                                 placeHolder: qsTr("Category")
                                 Layout.fillWidth: true
-
-                                // XXX lets allow always?
-                                // enabled: barcodeText.acceptableInput
+                                // Main category can NOT be changed so don't allow it when editing existing product
+                                enabled: !hasProduct
+                                model: root.api.getCategoryModel();                                
                                 textRole: "category"
-                                Component.onCompleted: {
-                                    model=root.api.getCategoryModel();
-                                }
                                 onCurrentIndexChanged: {
-                                    console.debug("CategoryIndex: "+currentIndex)
+                                    console.debug("onCurrentIndexChanged: "+currentIndex)
                                     updateCategoryData();
                                 }
+
+                                function selecteCategory(cid, scid) {
+                                    var cmc=model.count;
+
+                                    for (var i=0;i<cmc;i++) {
+                                        var c=model.get(i);
+
+                                        console.debug(i+" "+cid+" "+c.cid)
+
+                                        if (c.cid===cid) {
+                                            console.debug("CategoryFound! "+c.category)
+                                            categorySelection.currentIndex=i;
+                                            updateCategoryData();
+                                            break;
+                                        }
+                                    }
+
+                                    if (subCategorySelection.model) {
+                                        console.debug("Sub category model is available and sub category is: "+scid)
+                                        subCategorySelection.selecteCategory(scid)
+                                    } else {
+
+                                    }
+                                }
+
                                 function updateCategoryData() {
                                     var cdata=categorySelection.model.get(currentIndex);
                                     if (!cdata || currentIndex==0) {
@@ -470,10 +568,12 @@ Page {
                                     categoryID=cdata.cid;
 
                                     var scm=root.api.getSubCategoryModel(cdata.cid);
-                                    if (scm)
+                                    if (scm) {
                                         subCategorySelection.model=scm;
-                                    else
+                                        subCategorySelection.forceActiveFocus();
+                                    } else {
                                         subCategorySelection.model=false;
+                                    }
                                 }
 
                             }
@@ -481,8 +581,8 @@ Page {
                             // This is the specific category
                             ComboBoxLabel {
                                 id: subCategorySelection
-                                visible: enabled && model && model.count>0
-                                enabled: categorySelection.enabled && categorySelection.currentIndex>0 && model
+                                visible: model && model.count>0
+                                enabled: (hasProduct || categorySelection.enabled) && categorySelection.currentIndex>0 && model
                                 textRole: "category"
                                 placeHolder: qsTr("Subcategory")
                                 Layout.fillWidth: true
@@ -504,20 +604,40 @@ Page {
                                     categorySubID=cdata.cid;
                                     productTitle.setDefaultProductTitle("", cdata.category)
                                 }
+                                function selecteCategory(cid) {
+                                    var cmc=model.count;
+
+                                    for (var i=0;i<cmc;i++) {
+                                        var c=model.get(i);
+
+                                        console.debug(i+" "+cid+" "+c.cid)
+
+                                        if (c.cid===cid) {
+                                            console.debug("SubCategoryFound: "+c.category)
+                                            subCategorySelection.currentIndex=i;
+                                            updateSubcategory();
+                                            break;
+                                        }
+                                    }
+                                }
                             }
 
                             ComboBoxLabel {
                                 id: purposeSelection
                                 model: root.purposeModel
-                                enabled: true
+                                enabled: categoryHasPurpose
                                 visible: categoryHasPurpose
                                 textRole: "purpose"
                                 placeHolder: qsTr("Usage")
                                 Layout.fillWidth: true
+                                currentIndex: 0 //xxx
+                                invalidIndex: 0
                                 onCurrentIndexChanged: {
                                     var pdata=model.get(currentIndex)
                                     purposeID=pdata.pid;
                                 }
+                                /*
+                                  XXX: Fix this
                                 contentItem: Row {
                                     width: parent.width
                                     PurposeBadge {
@@ -536,10 +656,13 @@ Page {
                                         elide: Text.ElideRight
                                     }
                                 }
+                                */
                             }
 
                             RowLayout {
+                                Layout.alignment: Qt.AlignTop
                                 ColumnLayout  {
+                                    visible: validWarehouse
                                     Layout.fillWidth: true
                                     Label {
                                         id: locationName
@@ -549,6 +672,17 @@ Page {
                                         id: locationAddress
                                         font.pixelSize: 14
                                         Layout.fillWidth: true
+                                    }
+                                }
+                                ColumnLayout {
+                                    visible: !validWarehouse
+                                    Label {
+                                        text: qsTr("Select a location")
+                                        Layout.fillWidth: true
+                                        background: Rectangle {
+                                            color: "transparent"
+                                            border.color: "red"
+                                        }
                                     }
                                 }
 
@@ -563,6 +697,7 @@ Page {
                             TextField {
                                 id: productTitle
                                 Layout.fillWidth: true
+                                selectByMouse: true
                                 leftPadding: 4
                                 inputMethodHints: Qt.ImhNoPredictiveText
                                 placeholderText: qsTr("Product summary, title")
@@ -601,6 +736,7 @@ Page {
                                     id: productDescription
                                     textFormat: TextEdit.PlainText
                                     wrapMode: TextEdit.Wrap
+                                    selectByMouse: true
                                     width: parent.width
                                     placeholderText: qsTr("Enter product description")
                                 }
@@ -608,7 +744,7 @@ Page {
                             SpinBoxLabel {
                                 id: productStock
                                 visible: categoryHasStock
-                                value: hasProduct ? product.stock : 1
+                                value: 1
                                 from: 1
                                 to: 500
                                 label: qsTr("Stock amount")
@@ -622,6 +758,7 @@ Page {
                 // Images and capture interface
                 ColumnLayout {
                     id: images
+                    Layout.margins: 4
 
                     property bool isActive: SwipeView.isCurrentItem;
                     property bool isFirstVisit: true;
@@ -722,9 +859,20 @@ Page {
                                 rotation: appUtil.getImageRotation(image);
                             }
 
+                            // Visualy show image load error, for example on Android if storage permissions arent granted properly
+                            Rectangle {
+                                anchors.fill: parent;
+                                color: "red"
+                                visible: thumb.status==Image.Error
+                                Text {
+                                    anchors.centerIn: parent
+                                    text: qsTr("Image load error")
+                                }
+                            }
+
                             Menu {
                                 id: imageMenu
-                                title: "Product image"
+                                title:  qsTr("Image")
                                 modal: true
                                 dim: true
                                 x: parent.width/3
@@ -737,6 +885,7 @@ Page {
 
                                 MenuItem {
                                     text: qsTr("Remove image")
+                                    enabled: !hasProduct
                                     onClicked: {
                                         // XXX: Remove the file itself too
                                         imageModel.remove(index)
@@ -744,7 +893,7 @@ Page {
                                 }
 
                                 MenuItem {
-                                    enabled: false
+                                    enabled: false && !hasProduct
                                     text: "Edit"
                                     onClicked: {
 
@@ -773,8 +922,6 @@ Page {
                 // Extra attributes
                 ColumnLayout {
                     id: attributes
-                    Layout.fillWidth: true
-                    Layout.fillHeight: false
                     Layout.alignment: Qt.AlignTop
 
                     Text {
@@ -791,15 +938,13 @@ Page {
                         Layout.alignment: Layout.Center
 
                         PriceField {
-                            Layout.minimumWidth: 120
-                            Layout.maximumWidth: 200
-
                             id: productPrice
-                            text: hasProduct ? product.price : ''
+                            Layout.minimumWidth: 120
+                            Layout.maximumWidth: 200                                                        
                         }
                         ComboBox {
                             id: productTax
-                            visible: hasTax
+                            visible: categoryHasTax
                             displayText: qsTr("Tax: ")+currentText
                             model: api.getTaxModel();
                             textRole: "display"
@@ -811,9 +956,9 @@ Page {
                         Layout.alignment: Layout.Center
 
                         PriceField {
-                            Layout.fillWidth: true
                             id: productValue
-                            text: hasProduct ? product.value : ''
+                            Layout.fillWidth: true
+                            isOptional: true;
                             placeholderText: qsTr("Product value")
                         }
                     }
@@ -821,17 +966,17 @@ Page {
                     ColorSelector {
                         id: productColor
                         visible: categoryHasColor
-                        model: root.colorModel
+                        model: api.colorModel
                     }
                     ColorSelector {
                         id: productColor2
                         visible: categoryHasColor && productColor.colorIndex>0
-                        model: root.colorModel
+                        model: api.colorModel
                     }
                     ColorSelector {
                         id: productColor3
                         visible: categoryHasColor && productColor2.colorIndex>0
-                        model: root.colorModel
+                        model: api.colorModel
                     }
 
                     SizeField {
@@ -845,9 +990,8 @@ Page {
 
                 // Extras
                 ColumnLayout {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: false
                     Layout.alignment: Qt.AlignTop
+                    Layout.margins: 4
 
                     ColumnLayout {
                         id: makeAndModel
@@ -855,10 +999,19 @@ Page {
                         Layout.fillWidth: true
                         Layout.fillHeight: false
                         Layout.alignment: Qt.AlignTop
-                        TextField {
+                        Label {
+                            text: qsTr("Product manufacturer")
+                        }
+                        ComboBox {
                             id: productMake
                             Layout.fillWidth: true
-                            placeholderText: qsTr("Product manufacturer")
+                            editable: true
+                            model: manufacturerModel
+                            textRole: "manufacturer"
+                            Component.onCompleted: console.debug("*** MODEL HAS MANUFACTURERS: "+model.length)
+                            onAccepted: {
+                                productModel.forceActiveFocus()
+                            }
                         }
                         TextField {
                             id: productModel
@@ -888,21 +1041,21 @@ Page {
                                 id: productEAN
                                 visible: categoryHasEAN
                                 scannerEnabled: categoryHasEAN
+                                isOptional: true
                                 placeholderText: qsTr("Type or scan EAN")
-                                validator: RegExpValidator {
-                                    regExp: /[0-9]{10,13}/
-                                }
+                                inputMethodHints:  Qt.ImhNoPredictiveText | Qt.ImhPreferNumbers
+                                validator: EanValidator { }
                             }
                         }
                         RowLayout {
                             BarcodeScannerField {
                                 id: productISBN
                                 visible: categoryHasISBN
+                                isOptional: true
                                 placeholderText: qsTr("Type or scan ISBN")
                                 scannerEnabled: categoryHasISBN
-                                validator: RegExpValidator {
-                                    regExp: /[0-9]{10,13}/
-                                }
+                                inputMethodHints:  Qt.ImhNoPredictiveText | Qt.ImhPreferNumbers
+                                validator: EanValidator { }
                             }
                         }
                     }
@@ -925,7 +1078,7 @@ Page {
         anchors.rightMargin: 32
         anchors.bottomMargin: 32
         height: 32
-        property bool maybeVisible: images.isActive && canAddImages
+        property bool maybeVisible: images.isActive && canAddImages && !hasProduct
         visible: maybeVisible && imageModel.count>0
         opacity: maybeVisible ? 1 : 0;
         RoundButton {
@@ -946,38 +1099,11 @@ Page {
         }
     }
 
-    Popup {
+    PopupProgress {
         id: savingPopup
-        modal: true
-        contentHeight: pc.height
-        x: parent.width/2-width/2
-        y: parent.height/2-height/2
-        width: parent.width/2
-        //height: parent.height/4
-        closePolicy: Popup.NoAutoClose
-
-        Column {
-            id: pc
-            spacing: 16
-            Label {
-                id: name
-                text: qsTr("Saving...")
-                font.bold: true
-            }
-            BusyIndicator {
-                id: busyIndicator
-                running: isSaving
-                visible: true
-                anchors.horizontalCenter: parent.horizontalCenter
-            }
-            ProgressBar {
-                id: savingProgress
-                from: 0
-                to: 100
-                indeterminate: value==0.0
-                value: api.uploadProgress
-            }
-        }
+        label: qsTr("Saving product")
+        description: api.uploadProgress<100 ? qsTr("Uploading") : qsTr("Waiting for response")
+        value: api.uploadProgress
     }
 
     LocationPopup {
@@ -985,43 +1111,140 @@ Page {
         onLocationDetailChanged: productEditPage.locationDetail=locationDetail;
         onLocationIDChanged: productEditPage.locationID=locationID
         onRefresh: api.requestLocations();
+        hasLocationDetail: categoryHasLocationDetail
     }
 
-    function createProduct() {
-        var p=productTemplate.createObject(null, {
-                                               title: productTitle.text,
-                                               description: productDescription.text,
-                                               barcode: barcodeText.text,
-                                               category: categoryID,
-                                               subCategory: categorySubID
-                                           })
-        p.keepImages=keepImages;
+    function populateProduct(p) {
+        productTitle.text=p.title;
+        productDescription.text=p.description;
+        barcodeText.text=p.barcode;
 
+        p.getAttributes();
+
+        // We let the magic do it
+        //categoryID=p.category;
+        //categorySubID=p.subCategory;
+
+        categorySelection.selecteCategory(p.category, p.subCategory)
+
+        for (var i=0;i<p.images.length;i++) {
+            console.debug("Image: "+p.images[i]);
+            imageModel.addImage(p.images[i], Product.RemoteSource);
+        }
+
+        if (categoryHasPurpose && p.hasAttribute("purpose"))
+            purposeID=p.getAttribute("purpose")
+
+        if (categoryHasLocation) {
+            locationID=p.getWarehouse();
+            var i=locationsModel.findLocationByID(locationID);
+            console.debug("Location index is: "+i)
+            if (i>-1)
+                locationPopup.currentIndex=i;
+
+            if (categoryHasLocationDetail && p.hasAttribute("locationdetail"))
+                locationDetail=p.getAttribute("locationdetail")
+        }
+
+        // XXX
+        if (categoryHasColor && p.hasAttribute("color")) {
+            var col=p.getAttribute("color");
+            console.debug(col)
+            console.debug(col.length)
+            for (var i=0;i<col.length;i++) {
+                console.debug(i+" "+col[i])
+                var ri=colorEditors[i].setColor(col[i]);
+                console.debug(ri)
+            }
+        }
+
+        if (categoryHasMakeAndModel) {
+            productMake.editText=p.getAttribute("manufacturer")
+            productModel.text=p.getAttribute("model")
+        }
+
+        if (categoryHasEAN && p.hasAttribute("ean"))
+            productEAN.text=p.getAttribute("ean")
+
+        if (categoryHasISBN && p.hasAttribute("isbn"))
+            productISBN.text=p.getAttribute("isbn")
+
+        if (categoryHasAuthor && p.hasAttribute("author")) {
+            productAuthor.text=p.getAttribute("author")
+        }
+
+        if (categoryHasSize && p.hasAttribute("width")) {
+            productSize.itemWidth=p.getAttribute("width")
+            productSize.itemHeight=p.getAttribute("height")
+            productSize.itemDepth=p.getAttribute("depth")
+        }
+        if (categoryHasWeight && p.hasAttribute("weight")) {
+            productSize.itemWeight=p.getAttribute("weight")
+        }
+
+        if (categoryHasValue && p.hasAttribute("value")) {
+            productValue.price=p.getAttribute("value")
+        }
+
+        if (categoryHasStock) {
+            productStock.value=p.getStock();
+        } else {
+            productStock.value=1;
+        }
+
+        return true;
+    }
+
+    // Create a new product from filled data
+    function createProduct() {
+        var p=newProduct();
+        fillProduct(p);
+        return p;
+    }
+
+    // Create a new product item
+    function newProduct() {
+        return productTemplate.createObject(null, {});
+    }
+
+    function addProductImages(p) {
         for (var i=0;i<imageModel.count;i++) {
             var s=imageModel.get(i);
             p.addImage(s.image, s.source);
         }
+    }
 
-        if (categoryHasPurpose)
+    // Fill product with filled data
+    function fillProduct(p) {
+
+        p.getAttributes();
+
+        p.title=productTitle.text;
+        p.description=productDescription.text;
+
+        // Set information that can be changed only for new items
+        if (p.isNew()) {
+            p.barcode=barcodeText.text;
+            p.category=categoryID;            
+            p.keepImages=keepImages;
+            addProductImages(p)
+        }
+
+        // Sub category can be changed
+        p.subCategory=categorySubID;
+
+        if (categoryHasPurpose && purposeID>0) {
             p.setAttribute("purpose", purposeID)
+        }
 
-        if (hasLocation) {
+        if (categoryHasLocation) {
             p.setAttribute("location", locationID)
-            if (locationDetail!='')
+            if (categoryHasLocationDetail && locationDetail!='')
                 p.setAttribute("locationdetail", locationDetail)
         }
 
         if (categoryHasColor) {
-            var c;
-            if (productColor.colorID!='') {
-                c=productColor.colorID;
-                if (productColor2.colorID!='')
-                    c+=";"+productColor2.colorID;
-                if (productColor2.colorID!='' && productColor3colorID!='')
-                    c+=";"+productColor3.colorID;
-
-            }
-            p.setAttribute("color", c)
+            p.setAttribute("color", colorsIdentifiers)
         }
 
         if (categoryHasEAN && productEAN.text!='')
@@ -1048,15 +1271,19 @@ Page {
             p.setPrice(0.0);
         }
 
-        if (categoryHasValue && validValue) {
-            p.setAttribute("value", productValue.price)
+        if (categoryHasValue && validValue) {            
+            p.setAttribute("value", productValue.price)            
         }
 
         if (categoryHasMakeAndModel) {
+            if (productMake.currentText!='') {
+                p.setAttribute("manufacturer", productMake.currentText)
+                if (find(productMake.currentText) === -1)
+                    productMake.model.append({text: productMake.currentText})
+            }
+
             if (productModel.text!='')
                 p.setAttribute("model", productModel.text)
-            if (productMake.text!='')
-                p.setAttribute("manufacturer", productMake.text)
         }
 
         if (categoryHasAuthor && productAuthor.text!='') {
@@ -1070,28 +1297,6 @@ Page {
         }     
 
         return p;
-    }
-
-    MessageDialog {
-        id: confirmDialog
-        standardButtons: MessageDialog.Ok | MessageDialog.Cancel
-        title: qsTr("Save product ?")
-        text: qsTr("Save product:")
-        informativeText: productTitle.text
-
-        onAccepted: {
-            console.debug("*** Save accepted");
-            confirmDialog.close();
-            requestProductSave();
-        }
-
-        onRejected: {
-            console.debug("*** Save canceled");
-        }
-    }
-
-    Component.onCompleted: {
-        barcodeText.forceActiveFocus();
     }
 
 }

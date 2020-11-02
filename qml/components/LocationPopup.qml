@@ -1,7 +1,7 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
-import QtLocation 5.9
+import QtLocation 5.12
 
 Popup {
     id: locationPopup
@@ -22,6 +22,8 @@ Popup {
     property int locationID;
     property string locationDetail;
 
+    property bool hasLocationDetail: false
+
     signal refresh();
 
     onOpened: {
@@ -38,6 +40,7 @@ Popup {
             TextField {
                 id: productWarehouseSearch
                 Layout.fillWidth: true
+                enabled: !api.busy
                 placeholderText: qsTr("Search for locations")
                 onAccepted: {
                     productWarehouse.currentIndex=-1
@@ -47,6 +50,7 @@ Popup {
 
             RoundButton {
                 text: qsTr("Clear")
+                enabled: !api.busy
                 //enabled: productWarehouseSearch.text!=''
                 onClicked: {
                     productWarehouseSearch.text='';
@@ -56,15 +60,23 @@ Popup {
 
             RoundButton {
                 text: qsTr("Refresh")
+                enabled: !api.busy
                 onClicked: {
                     locationPopup.refresh();
                 }
             }
         }
 
+        BusyIndicator {
+            id: busyIndicator
+            running: api.busy
+            visible: api.busy
+            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+        }
+
         LocationListView {
-            id: productWarehouse
-            // headerPositioning: ListView.PullBackHeader
+            id: productWarehouse            
+            visible: !api.busy
             Layout.fillHeight: true
             header: Text {
                 Layout.alignment: Qt.AlignTop
@@ -85,8 +97,10 @@ Popup {
 
         TextField {
             id: productWarehouseLocation
-            enabled: productWarehouse.currentIndex>=0
+            enabled: productWarehouse.currentIndex>=0 && hasLocationDetail
+            visible: hasLocationDetail
             Layout.fillWidth: true
+            Layout.alignment: Qt.AlignBottom
             placeholderText: qsTr("Enter storage location")
             onTextChanged: {
                 locationDetail=text;

@@ -1,11 +1,11 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
-import QtQuick.Controls.Material 2.0
-import QtQuick.Layouts 1.3
+import QtQuick 2.12
+import QtQuick.Controls 2.12
+import QtQuick.Controls.Material 2.12
+import QtQuick.Layouts 1.12
 import QtQuick.Dialogs 1.2
-import QtQuick.Window 2.3
-import QtQuick.XmlListModel 2.0
-import QtPositioning 5.8
+import QtQuick.Window 2.12
+import QtQuick.XmlListModel 2.12
+import QtPositioning 5.12
 import net.ekotuki 1.0
 
 import "pages"
@@ -31,13 +31,26 @@ ApplicationWindow {
     property bool settingsAskMultiple: true
 
     property ServerApi api: api
-    property alias colorModel: colorModel
     property alias purposeModel: purposeModel
 
     property alias busy: api.busy
 
     property Position myPosition;
     property int savedLocation: 0
+
+    // Multi oprganization support settings
+    property string home: "";
+    property string username: "";
+    property string password: "";
+
+    property string apiKey: "";
+    property string apiUrlProduction: "";
+    property string apiUrlSandbox: "";   
+
+    property string apiRegistrationUrl: ""
+
+    property string imageBackground: "qrc:/profiles/turku/images/bg/bg.jpg";
+    property string imageLogo: "qrc:/images/logo.png";
 
     onBusyChanged: {
         console.debug("*** BUSY: "+busy)
@@ -55,28 +68,77 @@ ApplicationWindow {
 
     onSavedLocationChanged: console.debug("SLOC: "+savedLocation)
 
+    function setProfileImages() {
+        if (home!='') {
+            imageBackground="qrc:/profiles/"+home+"/images/bg/bg.jpg"
+            imageLogo="qrc:/profiles/"+home+"/images/logo.png"
+        } else {
+            imageBackground=''
+            imageLogo=''
+        }
+    }
+
     function logout() {
         api.logout();
         isLogged=false;
-        settings.setSettingsStr("password", "");
+        password='';
         rootStack.clear();
-        rootStack.push(messagesView);
+        rootStack.push(mainView);
     }
 
-    Component.onCompleted: {
+    function saveLoginDetails() {
+        settings.setSettingsStr(home+"/username", username);
+        settings.setSettingsStr(home+"/password", password);
+    }
+
+    function clearLoginDetails() {
+        settings.setSettingsStr(home+"/username", '');
+        settings.setSettingsStr(home+"/password", '');
+    }
+
+    function initSettings() {
         settingsDevelopmentMode=settings.getSettingsBool("developmentMode", false);
+
+        home=settings.getSettingsStr("organization", "");
+        if (home=='') {
+            console.debug("*** organization is not set")
+        } else {
+            console.debug("*** organization is "+home)
+
+            var i=api.orgModel.indexKey(home);
+            var o=api.orgModel.get(i-1);
+
+            if (o) {
+                setOrganization(o);
+
+                username=settings.getSettingsStr(home+"/username", "");
+                password=settings.getSettingsStr(home+"/password", "");
+            } else {
+                console.debug("*** organization not found!")
+                home='';
+            }
+        }
+        setProfileImages();
+
         settingsAskMultiple=settings.getSettingsBool("askMultiple", true);
         settingsKeepImages=settings.getSettingsBool("keepImages", true);
 
         savedLocation=settings.getSettingsInt("location", 0);
 
-        if (userData.username!=='' && userData.password!=='')
+        if (username!=='' && password!=='' && home!=='') {
             loginTimer.start();
+        } else if (home=='') {
+
+        }
     }
 
     onSettingsDevelopmentModeChanged: settings.setSettings("developmentMode", settingsDevelopmentMode)
     onSettingsAskMultipleChanged: settings.setSettings("askMultiple", settingsAskMultiple)
     onSettingsKeepImagesChanged: settings.setSettings("keepImages", settingsKeepImages)
+    onHomeChanged: {
+        settings.setSettings("organization", home)
+        setProfileImages();
+    }
 
     Timer {
         id: loginTimer
@@ -157,7 +219,7 @@ ApplicationWindow {
                     transformOrigin: Menu.TopRight
                     modal: true
                     MenuItem {
-                        enabled: rootStack.currentItem && rootStack.currentItem.objectName!='login'
+                        enabled: rootStack.currentItem && rootStack.currentItem.objectName!='login' && api.isonline
                         text: !isLogged ? qsTr("Login") : qsTr("Logout")
                         onTriggered: {
                             if (!isLogged)
@@ -191,19 +253,13 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 16
             Image {
+                id: rwLogo
                 Layout.fillWidth: true
-                source: "/images/logo.png"
+                source: "qrc:/images/logo.png"
+                smooth: true
+                sourceSize.width: 64
+                sourceSize.height: 64
                 fillMode: Image.PreserveAspectFit
-            }
-
-            Label {
-                Layout.fillWidth: true
-                visible: isLogged
-                anchors.margins: 8
-                font.pixelSize: 22
-                horizontalAlignment: Text.AlignHCenter
-                verticalAlignment: Text.AlignVCenter
-                text: qsTr("Welcome")
             }
 
             Label {
@@ -213,7 +269,18 @@ ApplicationWindow {
                 font.pixelSize: 20
                 horizontalAlignment: Text.AlignHCenter
                 verticalAlignment: Text.AlignVCenter
-                text: userData.username
+                text: qsTr("Welcome") + " " + root.username
+            }
+
+            Image {
+                id: orgLogo
+                visible: isLogged
+                Layout.fillWidth: true
+                source: imageLogo
+                smooth: true
+                sourceSize.width: 64
+                sourceSize.height: 64
+                fillMode: Image.PreserveAspectFit
             }
 
             Label {
@@ -252,7 +319,7 @@ ApplicationWindow {
                     icon.width: 32
                     icon.height: 32
                     font.pointSize: 22;                    
-                    enabled: role=="" || api.hasRole(role);
+                    enabled: role=="" || api.hasRole(role) // || !(home=='' && role=='home');
                     display: AbstractButton.TextBesideIcon
                     onClicked: {
                         console.debug("DrawerMenu click: "+model.viewId)
@@ -287,24 +354,24 @@ ApplicationWindow {
     // Main views when logged in
     ListModel {
         id: actionModel1
-        ListElement { title: qsTr("Products"); viewId: 4; role: "product"; image: "qrc:/images/icon_browse.png" }
-        ListElement { title: qsTr("Add product"); viewId: 3; role: "products"; image: "qrc:/images/icon_add.png"; }
+        ListElement { title: qsTr("Products"); viewId: 4; role: "product"; image: "qrc:/images/icon_gallery.png" }
+        ListElement { title: qsTr("Add product"); viewId: 3; role: "products"; image: "qrc:/images/icon_plus.png"; }
 
-        ListElement { title: qsTr("Cart"); viewId: 8; role: "order"; image: "qrc:/images/icon_cart.png"; }
-        ListElement { title: qsTr("Orders"); viewId: 9; role: "orders"; image: "qrc:/images/icon_orders.png"; }
+        ListElement { title: qsTr("Cart"); viewId: 8; role: "cart"; image: "qrc:/images/icon_cart.png"; }
+        ListElement { title: qsTr("Orders"); viewId: 9; role: "orders"; image: "qrc:/images/icon_bag.png"; }
 
-        ListElement { title: qsTr("Messages"); viewId: 10; role: ""; image: "qrc:/images/icon_news.png";  }
+        ListElement { title: qsTr("Messages"); viewId: 10; role: ""; image: "qrc:/images/icon_messages.png";  }
 
         //ListElement { title: qsTr("Help"); viewId: 6; role: ""; image: "qrc:/images/icon_help.png" }
-        ListElement { title: qsTr("About"); viewId: 7; role: ""; image: "qrc:/images/icon_about.png";  }
+        ListElement { title: qsTr("About"); viewId: 7; role: ""; image: "qrc:/images/icon_at.png";  }
     }
 
     // Main views when logged out
     ListModel {
         id: actionModel2
-        ListElement { title: qsTr("Login"); viewId: 1; role: ""; image: "qrc:/images/icon_login.png"; }
-        ListElement { title: qsTr("Messages"); viewId: 10; role: ""; image: "qrc:/images/icon_news.png"; }
-        ListElement { title: qsTr("About"); viewId: 7; role: ""; image: "qrc:/images/icon_about.png"; }
+        // ListElement { title: qsTr("Login"); viewId: 1; role: ""; image: "qrc:/images/icon_login.png"; }
+        ListElement { title: qsTr("Messages"); viewId: 10; role: ""; image: "qrc:/images/icon_messages.png"; }
+        ListElement { title: qsTr("About"); viewId: 7; role: ""; image: "qrc:/images/icon_at.png"; }
     }
 
     // Our root navigation element
@@ -511,6 +578,15 @@ ApplicationWindow {
                 if (!tempProduct) {
                     console.debug("*** Failed to get product!")
                     editPage.saveFailed();
+                    messagePopup.show(qsTr("Saving failed"), qsTr("Product creation failed"), 500);
+                    return;
+                }
+
+                if (api.getItemModel().contains(tempProduct.barcode)) {
+                    console.debug("*** Product with barcode "+tempProduct.barcode+" already exists")
+                    editPage.saveFailed();
+                    messagePopup.show(qsTr("Saving failed"), qsTr("Product barcode must be unique"), 409);
+                    tempProduct.destroy();
                     return;
                 }
 
@@ -561,19 +637,15 @@ ApplicationWindow {
             id: pageLoginPage
             objectName: "login"
             onLoginRequested: {
-                userData.username=username;
-                userData.password=password;
-                settings.setSettingsStr("username", username);
-                settings.setSettingsStr("password", password);
+                root.username=username;
+                root.password=password;
                 loginTimer.start();
             }
             onLoginCanceled: {
-                rootStack.pop();
+                api.loginCancel();                
             }
             Component.onCompleted: {
-                // Fill in stored data
-                username=userData.username;
-                password=userData.password;
+
             }
         }
     }
@@ -620,47 +692,67 @@ ApplicationWindow {
         }
     }
 
-
-    // XXX, should we hardcode values here and map these on the server side or what ?
-    // cid: server side identifier
-    ColorModel {
-        id: colorModel
-    }
-
     PurposeModel {
         id: purposeModel
     }
 
+    ManufacturerModel {
+        id: manufacturerModel
+    }
+
     NewsModel {
         id: newsFeedModel
-        source: api.url+"news"
+        source: home!='' && api.url!='' ? api.url+"news" : ''
         onLatestEntryDateChanged: {
-            var ts=settings.getSettingsStr("newsStamp", "");
+            var ts=settings.getSettingsStr(home+"/newsStamp", "");
             if (ts!=latestEntryDate) {
                 var m=get(0);
                 messagePopup.show(m.newsTitle, m.description, m.newsDate);
-                settings.setSettingsStr("newsStamp", latestEntryDate);
+                settings.setSettingsStr(home+"/newsStamp", latestEntryDate);
             }
         }
     }
 
+    function setOrganization(o) {
+        root.apiKey=o.apiKey;
+        root.apiUrlProduction=o.apiUrlProduction;
+        root.apiUrlSandbox=o.apiUrlSandbox;        
+        root.home=o.code;
+    }
+
     ServerApi {
         id: api
-        url: settingsDevelopmentMode ? userData.urlSandbox : userData.urlProduction
-        username: userData.username;
-        password: userData.password;
-        apikey: userData.apikey;
+        url: settingsDevelopmentMode ? root.apiUrlSandbox : root.apiUrlProduction
+        username: root.username;
+        password: root.password;
+        apikey: root.apiKey
+
+        property OrganizationModel orgModel;
+        property ColorModel colorModel;
+
+        onApikeyChanged: {
+            // We need to set the organization specific API key for the engine NetworkAccessManagerFactory to use for requests
+            appNAM.setApiKey(apikey)
+        }
 
         onLoginSuccesfull: {
             console.debug("Login succesfull")
             isLogged=true;
-            if (rootStack.contains(pageLogin)) {
+            if (rootStack.currentItem.objectName=='login') {
                 rootStack.pop();
             }
+            saveLoginDetails();
             rootStack.clear();
+            // XXX: Should this be the "default view" ?
             rootStack.push(searchView)
             requestLocations();
             requestCategories();
+            requestColors();
+        }
+
+        onIsOnlineChanged: {
+            if (isonline)
+                newsFeedModel.reload();
         }
 
         onUpdateAvailable: {
@@ -741,14 +833,18 @@ ApplicationWindow {
             }
         }
 
+        onLoginCanceled: {
+            isLogged=false;
+            console.debug("*** onLoginCanceled")
+            if (rootStack.currentItem.objectName=="login") {
+                rootStack.currentItem.reportLoginFailed();
+            }
+        }
+
         onRequestFailure: {
             console.debug("*** onRequestFailure: "+error)
 
             errorMessage(error, msg);
-
-            // XXX: This should not be required
-            if (rootStack.currentItem.objectName=="productEdit")
-                rootStack.currentItem.confirmProductSave(false, 0, msg);
 
             if (rootStack.currentItem.objectName=="login") {
                 rootStack.currentItem.reportLoginFailed();
@@ -764,7 +860,11 @@ ApplicationWindow {
         }
 
         Component.onCompleted: {
+            console.debug("*** API is ready!")
             setAppVersion(appVersionCode);
+            orgModel=getOrganizationModel();
+            colorModel=getColorModel();
+            initSettings();
         }
 
         function getOrderFilterStatusString(s) {

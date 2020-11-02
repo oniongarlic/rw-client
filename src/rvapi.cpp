@@ -17,11 +17,12 @@
 
 #include <QNetworkProxy>
 
+#include <QDir>
+
 //#define LOGIN_DEBUG 1
 //#define DATA_DEBUG 1
 //#define JSON_DEBUG 1
 //#define SECURE_DEBUG 1
-//#define DUMMY_CATEGORIES 1
 
 // We disable network cache as there seem to be some issues with stale data when network errors happen
 //#define ENABLE_CACHE 1
@@ -46,6 +47,8 @@ RvAPI::RvAPI(QObject *parent) :
     m_busy(false),
     m_hasMore(false),
     m_loadedPage(0),
+    m_organization_model(this),
+    m_color_model(this),
     m_itemsmodel(&m_product_store, this),
     m_cartmodel(this),
     m_categorymodel(nullptr, this),
@@ -67,29 +70,46 @@ RvAPI::RvAPI(QObject *parent) :
     // Create network request application header string
     m_hversion=QString("RW/%1").arg(QCoreApplication::applicationVersion());
 
-    // Dummy categories for development purposes
-#ifdef DUMMY_CATEGORIES
-    m_categorymodel.addCategory("", "", CategoryModel::InvalidCategory);
-    m_categorymodel.addCategory("huonekalu", "Huonekalu", CategoryModel::HasSize | CategoryModel::HasWeight | CategoryModel::HasColor);
-    m_categorymodel.addCategory("sekalaista", "Sekalaista", 0);
+    // Load supported organizations from profiles
+    QDir profiles(":/profiles");
+    QStringList filters;
+    filters << "*.json";
+    profiles.setNameFilters(filters);
 
-    CategoryModel *cm;
-    cm=new CategoryModel("huonekalu", this);
-    cm->addCategory("tuoli", "Tuoli", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("hylly", "Hylly", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("poyta", "Pöytä", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("sohva", "Sohva", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("lipasto", "Lipasto", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("pulpetti", "Pulpetti", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("kaappi", "Kaappi", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("rulokaappi", "Kaappi/Rulokaappi", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("hyllykaappi", "Kaappi/Hyllykaappi", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("vaatekaappi", "Kaappi/Vaatekaappi", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    cm->addCategory("huonemuu", "Muu", CategoryModel::HasSize | CategoryModel::HasWeight| CategoryModel::HasColor);
-    m_subcategorymodels.insert("huonekalu", cm);
-#endif
+    // qDebug() << "Profiles available:" << profiles.entryList();
 
-    m_attributes << "width" << "height" << "depth" << "weight" << "color" << "ean" << "isbn" << "purpose" << "make" << "model" << "author" << "location" << "locationdetail";
+    // String fields to copy from JSON object
+    QStringList fields;
+    fields << "code" << "name" << "apiKey" << "apiUrlProduction" << "apiUrlSandbox";
+
+    foreach(const QString &profileName, profiles.entryList() ) {
+        QFile file(":/profiles/"+profileName);
+        file.open(QIODevice::ReadOnly);
+
+        QByteArray data=file.readAll();
+        QJsonDocument json=QJsonDocument::fromJson(data);
+        if (json.isNull() || json.isEmpty()) {
+            qWarning() << "Invalid profile JSON" << profileName;
+            continue;
+        }
+        QVariantMap profileMap=json.object().toVariantMap();
+
+        OrganizationItem *org=new OrganizationItem();
+        foreach(const QString &field, fields) {
+            // qDebug() << field << profileMap.value(field).toString();
+            org->setProperty(field.toLocal8Bit(), profileMap.value(field).toString());
+        }
+
+        m_organization_model.append(org);
+    }
+
+    // Monitor network connection
+    m_netconf=new QNetworkConfigurationManager();
+    QObject::connect(m_netconf, SIGNAL(onlineStateChanged(bool)), this, SLOT(onNetworkOnlineChanged(bool)));
+    onNetworkOnlineChanged(m_netconf->isOnline());
+
+    // Valid product attributes
+    m_attributes << "width" << "height" << "depth" << "weight" << "color" << "ean" << "isbn" << "purpose" << "manufacturer" << "model" << "author" << "location" << "locationdetail";
 
     m_taxes << "0%" << "24%" << "14%" << "10%";
     m_tax_model.setStringList(m_taxes);
@@ -104,7 +124,7 @@ RvAPI::RvAPI(QObject *parent) :
 
 RvAPI::~RvAPI()
 {    
-    clearProductStore();
+    clearSession();
 }
 
 void RvAPI::clearCache()
@@ -189,6 +209,12 @@ void RvAPI::requestError(QNetworkReply::NetworkError code)
         break;
     case QNetworkReply::HostNotFoundError:
         break;
+    case QNetworkReply::OperationCanceledError:
+        break;
+    case QNetworkReply::ProtocolInvalidOperationError:
+        break;
+    case QNetworkReply::TimeoutError:
+        break;
     default:
         qWarning() << "Unhandled request error: " << code;
         break;
@@ -198,7 +224,7 @@ void RvAPI::requestError(QNetworkReply::NetworkError code)
 void RvAPI::uploadProgress(qint64 bytes, qint64 total)
 {
     quint8 p;
-    //QNetworkReply * reply = qobject_cast<QNetworkReply*>(sender());    
+    //QNetworkReply * reply = qobject_cast<QNetworkReply*>(sender());
 
     if (total==0 || bytes==0)
         p=0;
@@ -233,6 +259,12 @@ void RvAPI::requestFinished() {
     parseResponse(reply);
 
     reply->deleteLater();
+}
+
+void RvAPI::onNetworkOnlineChanged(bool online)
+{
+    m_isonline=online;
+    emit isOnlineChanged(online);
 }
 
 void RvAPI::clearProductStore()
@@ -408,6 +440,26 @@ QNetworkReply *RvAPI::head(QNetworkRequest &request)
     return reply;
 }
 
+bool RvAPI::cancelOperation(RequestOps op)
+{
+    auto v=m_requests.values();
+    auto k=m_requests.keys();
+
+    if (!v.contains(op)) {
+        return false;
+    }
+    int i=v.indexOf(op);
+    if (i==-1)
+        return false;
+
+    QNetworkReply *r=k.at(i);
+    Q_ASSERT(r);
+
+    r->abort();
+
+    return true;
+}
+
 /**
  * @brief RvAPI::isRequestActive
  * @param op
@@ -453,11 +505,60 @@ void RvAPI::setBusy(bool busy)
 void RvAPI::parseErrorResponse(int code, QNetworkReply::NetworkError e, RequestOps op, const QByteArray &response)
 {
     QVariantMap v;
-    if (parseJsonResponse(response, v)==false) {
-        emit requestFailure(500, QNetworkReply::UnknownServerError, "Invalid server response");
+
+    // Is it a network error ?
+    if (code==0) {
+        switch (e) {
+        case QNetworkReply::OperationCanceledError:
+            // XXX: How should we handle this ?
+            if (op==AuthLogin)
+                emit loginCanceled();
+            else
+                emit requestFailure(500, e, tr("Network operation was canceled"));
+            return;
+        case QNetworkReply::ContentAccessDenied:
+        case QNetworkReply::ContentOperationNotPermittedError:
+            emit requestFailure(403, e, tr("Access denied"));
+            return;
+        case QNetworkReply::ContentNotFoundError:
+            emit requestFailure(404, e, tr("API endpoint not found"));
+            return;
+        case QNetworkReply::TimeoutError:
+            emit requestFailure(500, e, tr("Server connection timeout"));
+            return;
+        case QNetworkReply::ConnectionRefusedError:
+            emit requestFailure(500, e, tr("Server connection error"));
+            return;
+        case QNetworkReply::RemoteHostClosedError:
+            emit requestFailure(500, e, tr("Server closed connection error"));
+            return;
+        case QNetworkReply::HostNotFoundError:
+            emit requestFailure(500, e, tr("Server not found"));
+            return;
+        case QNetworkReply::SslHandshakeFailedError:
+            emit requestFailure(500, e, tr("Failed to establish secure connection"));
+            return;
+        case QNetworkReply::ProxyConnectionRefusedError:
+        case QNetworkReply::ProxyConnectionClosedError:
+        case QNetworkReply::ProxyNotFoundError:
+        case QNetworkReply::ProxyTimeoutError:
+        case QNetworkReply::ProxyAuthenticationRequiredError:
+            emit requestFailure(500, e, tr("Proxy error"));
+            return;
+        case QNetworkReply::UnknownNetworkError:
+            emit requestFailure(500, e, tr("Unknown network error"));
+            return;
+        default:;
+        }
+        emit requestFailure(500, e, tr("Generic network error"));
         return;
     }
-    QVariantMap data=v.value("data").toMap();    
+
+    if (parseJsonResponse(response, v)==false) {
+        emit requestFailure(500, QNetworkReply::UnknownServerError, tr("Invalid server response"));
+        return;
+    }
+    QVariantMap data=v.value("data").toMap();
 
     if (op==AuthLogin || code==403) {
         setAuthentication(false);
@@ -506,32 +607,26 @@ void RvAPI::parseErrorResponse(int code, QNetworkReply::NetworkError e, RequestO
     emit requestFailure(code, e, m_msg);
 }
 
-void RvAPI::parseCategoryMap(const QString key, CategoryModel &model, QVariantMap &tmp)
-{
-    CategoryModel::FeatureFlags flags;
+#define checkFlag(_key, _flag) { if (tmp.contains(_key)) flags.setFlag(_flag, tmp.value(_key).toBool()); }
 
+void RvAPI::parseCategoryMap(const QString key, CategoryModel &model, QVariantMap &tmp, CategoryModel::FeatureFlags flags)
+{    
     //QString id=tmp.value("id").toString();
 
-    if (tmp.value("hasSize").toBool())
-        flags|=CategoryModel::HasSize;
-    if (tmp.value("hasWeight").toBool())
-        flags|=CategoryModel::HasWeight;
-    if (tmp.value("hasColor").toBool())
-        flags|=CategoryModel::HasColor;
-    if (tmp.value("hasStock").toBool())
-        flags|=CategoryModel::HasStock;
-    if (tmp.value("hasAuthor").toBool())
-        flags|=CategoryModel::HasAuthor;
-    if (tmp.value("hasMakeAndModel").toBool())
-        flags|=CategoryModel::HasMakeAndModel;
-    if (tmp.value("hasISBN").toBool())
-        flags|=CategoryModel::HasISBN;
-    if (tmp.value("hasEAN").toBool())
-        flags|=CategoryModel::HasEAN;
-    if (tmp.value("hasPrice").toBool())
-        flags|=CategoryModel::HasPrice;
-    if (tmp.value("hasValue").toBool())
-        flags|=CategoryModel::HasValue;
+    checkFlag("hasSize", CategoryModel::HasSize);
+    checkFlag("hasWeight", CategoryModel::HasWeight);
+    checkFlag("hasColor", CategoryModel::HasColor);
+
+    checkFlag("hasStock", CategoryModel::HasStock);
+    checkFlag("hasAuthor", CategoryModel::HasAuthor);
+    checkFlag("hasMakeAndModel", CategoryModel::HasMakeAndModel);
+
+    checkFlag("hasISBN", CategoryModel::HasISBN);
+    checkFlag("hasEAN", CategoryModel::HasEAN);
+
+    checkFlag("hasPrice", CategoryModel::HasPrice);
+    checkFlag("hasValue", CategoryModel::HasValue);
+    checkFlag("hasPurpose", CategoryModel::HasPurpose);
 
     model.addCategory(key, tmp.value("name").toString(), flags);
 
@@ -543,10 +638,75 @@ void RvAPI::parseCategoryMap(const QString key, CategoryModel &model, QVariantMa
             i.next();
             QVariantMap cmap=i.value().toMap();
 
-            parseCategoryMap(i.key(), *cm, cmap);
+            parseCategoryMap(i.key(), *cm, cmap, flags);
         }
         m_subcategorymodels.insert(key, cm);
     }
+}
+
+bool RvAPI::parseColorsData(QVariantMap &data)
+{
+    qDebug() << "ColorData: " << data;
+
+    if (data.isEmpty())
+        return false;
+
+    m_color_model.clear();
+
+    // Add the default dummy
+    m_color_model.append(new ColorItem("", "", "transparent", &m_color_model));
+
+
+    QMapIterator<QString, QVariant> i(data);
+    while(i.hasNext()) {
+        i.next();
+
+        QVariantMap cm=i.value().toMap();
+
+        qDebug() << "ColorMap: " << cm;
+
+        ColorItem *ci=new ColorItem(cm.value("cid").toString(), cm.value("color").toString(), cm.value("code").toString(), &m_color_model);
+        m_color_model.append(ci);
+    }
+
+    return true;
+}
+
+/**
+ * @brief RvAPI::createStaticColorModel
+ *
+ * Create fallback static color model in case server request fails
+ */
+void RvAPI::createStaticColorModel()
+{
+    m_color_model.clear();
+
+    m_color_model.append(new ColorItem("", "", "transparent"));
+
+    m_color_model.append(new ColorItem("black", tr("Black"), "#000000"));
+    m_color_model.append(new ColorItem("brown", tr("Brown"), "#ab711a"));
+    m_color_model.append(new ColorItem("grey", tr("Grey"), "#a0a0a0"));
+    m_color_model.append(new ColorItem("white", tr("White"), "#ffffff"));
+
+    m_color_model.append(new ColorItem("blue", tr("Blue"), "#0000ff"));
+    m_color_model.append(new ColorItem("green", tr("Green"), "#00ff00"));
+    m_color_model.append(new ColorItem("red", tr("Red"), "#ff0000"));
+    m_color_model.append(new ColorItem("yellow", tr("Yellow"), "#ffff00"));
+    m_color_model.append(new ColorItem("pink", tr("Pink"), "#ff53a6"));
+    m_color_model.append(new ColorItem("orange", tr("Orange"), "#ff9800"));
+    m_color_model.append(new ColorItem("cyan", tr("Cyan"), "#00FFFF"));
+    m_color_model.append(new ColorItem("violet", tr("Violet"), "#800080"));
+
+    m_color_model.append(new ColorItem("multi", tr("Multicolor"), "#transparent"));
+
+    m_color_model.append(new ColorItem("gold", tr("Gold"), "#FFD700"));
+    m_color_model.append(new ColorItem("silver", tr("Silver"), "#C0C0C0"));
+    m_color_model.append(new ColorItem("chrome", tr("Chrome"), "#DBE4EB"));
+
+    m_color_model.append(new ColorItem("walnut", tr("Walnut"), "#443028"));
+    m_color_model.append(new ColorItem("oak", tr("Oak"), "#806517"));
+    m_color_model.append(new ColorItem("birch", tr("Birch"), "#f8dfa1"));
+    m_color_model.append(new ColorItem("beech", tr("Beech"), "#cdaa88"));
 }
 
 bool RvAPI::parseOrderCreated(QVariantMap &data)
@@ -628,8 +788,9 @@ bool RvAPI::parseCategoryData(QVariantMap &data)
     while (i.hasNext()) {
         i.next();
         QVariantMap cmap=i.value().toMap();
+        CategoryModel::FeatureFlags default_flags;
 
-        parseCategoryMap(i.key(), m_categorymodel, cmap);
+        parseCategoryMap(i.key(), m_categorymodel, cmap, default_flags);
     }
 
     return true;
@@ -651,6 +812,8 @@ bool RvAPI::parseLocationData(QVariantMap &data)
         l->name=tmp.value("location").toString();
         l->street=tmp.value("street").toString();
         l->city=tmp.value("city").toString();
+
+        // Optional geo-location
         if (tmp.contains("geo")) {
             QVariantList loc=tmp.value("geo").toList();
             if (loc.size()==2) {
@@ -690,15 +853,22 @@ bool RvAPI::parseProductData(QVariantMap &data, const QNetworkAccessManager::Ope
         emit productDeleted(data["barcode"].toString());
         return true;
     case QNetworkAccessManager::GetOperation: {
-
         ProductItem *p=ProductItem::fromVariantMap(data, this);
         m_product_store.insert(p->barcode(), p);
+        if (m_itemsmodel.contains(p->barcode()))
+            m_itemsmodel.update(p);
+        else
+            m_itemsmodel.append(p);
         emit productFound(p);
     }
         return true;
     case QNetworkAccessManager::PostOperation: {
         ProductItem *p=ProductItem::fromVariantMap(data, this);
         m_product_store.insert(p->barcode(), p);
+        if (m_itemsmodel.contains(p->barcode()))
+            m_itemsmodel.update(p);
+        else
+            m_itemsmodel.prepend(p);
         emit productSaved(p, true);
     }
         return true;
@@ -770,7 +940,7 @@ bool RvAPI::parseLogin(QVariantMap &data)
     m_lastlogin=QDateTime::fromSecsSinceEpoch(data["access"].toString().toLong());
 
     // We only care about the string values
-    m_roles=data.value("roles").toList();
+    m_roles=data.value("roles").toList();    
 
     setAuthentication(true);
     emit loginSuccesfull();
@@ -847,8 +1017,10 @@ bool RvAPI::parseOKResponse(RequestOps op, const QByteArray &response, const QNe
     }
     case RvAPI::Product:
     case RvAPI::ProductAdd:
-    case RvAPI::ProductUpdate:
-        return parseProductData(data, method);
+    case RvAPI::ProductUpdate: {
+        QVariantMap product=data.value("response").toMap();
+        return parseProductData(product, method);
+    }
     case RvAPI::Products: {
         bool r=parseProductsData(data);
         emit searchCompleted(m_hasMore, r);
@@ -858,6 +1030,8 @@ bool RvAPI::parseOKResponse(RequestOps op, const QByteArray &response, const QNe
         return parseCategoryData(data);
     case RvAPI::Locations:
         return parseLocationData(data);
+    case RvAPI::Colors:
+        return parseColorsData(data);
     case RvAPI::Orders:
         if (method==QNetworkAccessManager::PostOperation)
             return parseOrderCreated(data);
@@ -937,6 +1111,7 @@ void RvAPI::parseResponse(QNetworkReply *reply)
     case 404: // Not found
     case 409: // Conflict
     case 500: // Internal error
+    case 504: // Timeout
         parseErrorResponse(hc, e, op, data);
         break;
     case 0: // Network error
@@ -1090,7 +1265,9 @@ bool RvAPI::createSimpleAuthenticatedPutRequest(const QString opurl, RequestOps 
  *
  */
 bool RvAPI::login()
-{    
+{
+    clearSession();
+
     if (m_url.isEmpty()) {
         qWarning("API urls is not set ");
         return false;
@@ -1101,8 +1278,10 @@ bool RvAPI::login()
         return false;
     }
 
-    if (m_authenticated)
+    if (m_authenticated) {
+        qWarning("Already authenticated, ignoring");
         return false;
+    }
 
     if (isRequestActive(AuthLogin)) {
         qWarning("Login request is already active");
@@ -1123,12 +1302,19 @@ bool RvAPI::login()
     return true;
 }
 
+bool RvAPI::loginCancel()
+{
+    return cancelOperation(AuthLogin);
+}
+
 /**
  * @brief RvAPI::logout
  * @return
  */
 bool RvAPI::logout()
 {
+    clearSession();
+
     if (isRequestActive(AuthLogout))
         return false;
 
@@ -1143,6 +1329,25 @@ bool RvAPI::logout()
     queueRequest(post(request, mp), AuthLogout);
 
     return true;
+}
+
+void RvAPI::clearSession()
+{
+    clearProductStore();
+    clearProductFilters();
+
+    m_categorymodel.clear();
+
+    m_cartmodel.clear();
+    m_ordersmodel.clear();
+    m_orders.clear();
+
+    m_locations.clear();
+    m_color_model.clear();
+    m_roles.clear();
+
+    m_cappversion=0;
+    m_apk.clear();
 }
 
 bool RvAPI::hasRole(const QString &role)
@@ -1264,13 +1469,13 @@ void RvAPI::addCommonProductParameters(QHttpMultiPart *mp, ProductItem *product)
         addParameter(mp, QStringLiteral("price"), num.setNum(p,'f',2));
         addParameter(mp, QStringLiteral("tax"), product->getTax());
     }
-    // Add attributes
+    // Validate and add attributes
     // XXX: We don't check for category required attributes here, should we bother ?
     for (int i = 0; i < m_attributes.size(); i++) {
         QString a=m_attributes.at(i);
 
         if (product->hasAttribute(a)) {
-            addParameter(mp, a, product->getAttribute(a).toString());
+            addParameter(mp, a, product->getAttribute(a));
         }
     }
 }
@@ -1336,12 +1541,14 @@ bool RvAPI::addProduct(ProductItem *product)
  * @return
  *
  * Update information of given ProductItem. The product must have a valid barcode to identify it.
- * XXX: Untested at this time
  *
  */
 bool RvAPI::updateProduct(ProductItem *product)
 {
     if (!m_authenticated)
+        return false;
+
+    if (product->getBarcode().isEmpty())
         return false;
 
     if (isRequestActive(ProductUpdate))
@@ -1355,11 +1562,8 @@ bool RvAPI::updateProduct(ProductItem *product)
 
     addCommonProductParameters(mp, product);
 
-    // XXX: Needs to be implemented fully
-    // XXX: How to handle images add/remove ?
-
     request.setUrl(url);
-    queueRequest(put(request, mp), ProductUpdate);
+    queueRequest(post(request, mp), ProductUpdate);
 
     return true;
 }
@@ -1599,6 +1803,11 @@ bool RvAPI::requestCategories()
     return createSimpleAuthenticatedRequest(op_categories, Categories);
 }
 
+bool RvAPI::requestColors()
+{
+    return createSimpleAuthenticatedRequest(op_colors, Colors);
+}
+
 bool RvAPI::downloadUpdate()
 {
     if (!m_authenticated)
@@ -1671,6 +1880,11 @@ bool RvAPI::validateBarcodeEAN(const QString code) const
     return code.at(12).digitValue()==cd ? true : false;
 }
 
+OrganizationModel *RvAPI::getOrganizationModel()
+{
+    return &m_organization_model;
+}
+
 ItemListModel *RvAPI::getItemModel()
 {    
     return &m_itemsmodel;
@@ -1704,6 +1918,11 @@ CategoryModel *RvAPI::getSubCategoryModel(const QString key)
 QStringListModel *RvAPI::getTaxModel()
 {
     return &m_tax_model;
+}
+
+ColorModel *RvAPI::getColorModel()
+{
+    return &m_color_model;
 }
 
 bool RvAPI::authenticated() const

@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 import "../components"
@@ -32,10 +32,11 @@ Page {
         anchors.fill: parent
         anchors.margins: 16
         contentHeight: c.height
+        boundsBehavior: Flickable.StopAtBounds
 
         ColumnLayout {
             id: c
-            anchors.fill: parent
+            width: parent.width
             spacing: 8
 
             GroupBox {
@@ -45,6 +46,7 @@ Page {
                     CheckBox {
                         id: checkKeepImages
                         text: qsTr("Keep uploaded images on device")
+                        visible: false
                         checked: true
                     }
                     CheckBox {
@@ -82,11 +84,12 @@ Page {
                     }
                     ComboBox {
                         id: comboLanguageSelection
-                        visible: !checkDeviceLanguage.checked
+                        enabled: !checkDeviceLanguage.checked
                         textRole: "value"
                         model: ListModel {
                             ListElement { key: "en_US"; value: "English"; }
                             ListElement { key: "fi_FI"; value: "Suomi"; }
+                            ListElement { key: "fi_SV"; value: "Svenska"; }
                         }
                     }
                 }
@@ -126,6 +129,15 @@ Page {
                 title: "Debug settings"
                 Layout.fillWidth: true
                 ColumnLayout {
+                    Button {
+                        text: qsTr("Clear organization and login")
+                        enabled: !api.authenticated
+                        Layout.fillWidth: true
+                        onClicked: {
+                            clearLoginDetails();
+                            root.home='';
+                        }
+                    }
                     CheckBox {
                         id: checkDevelopment
                         text: qsTr("Development sandbox mode")

@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 import "../components"
 
@@ -60,7 +60,7 @@ Rectangle {
                 anchors.left: i.left
                 anchors.margins: 4
                 size: i.width/4
-                purpose: model.purpose;
+                purpose: model.purpose!=undefined ? model.purpose : 0;
             }
             ProgressBar {
                 width: i.width/2
@@ -99,34 +99,34 @@ Rectangle {
             height: ic.height+16
         }
 
-        Column {
+        ColumnLayout {
             id: ic
             spacing: 2
             width: r.width-32
             anchors.horizontalCenter: parent.horizontalCenter
             anchors.margins: 8
-            //leftPadding: 4
-            //rightPadding: 4
             anchors.bottom: r.bottom
 
-            Text {
-                //Layout.alignment: Qt.AlignTop
-                width: parent.width
-                text: productTitle
-                font.pixelSize: 18
-                //wrapMode: Text.Wrap
-                //maximumLineCount: 2
-                elide: Text.ElideRight
-            }
-            Text {                
-                text: price.toFixed(2)+ " €"
-                visible: price>0
-                font.pixelSize: 12
-                color: "#181818"
-                maximumLineCount: 1
-                fontSizeMode: Text.HorizontalFit
-                minimumPixelSize: 12
-            }
+            RowLayout {
+                id: ns
+                Text {
+                    Layout.fillWidth: true
+                    text: productTitle
+                    font.pixelSize: 18
+                    //wrapMode: Text.Wrap
+                    //maximumLineCount: 2
+                    elide: Text.ElideRight
+                }
+                Badge {
+                    Layout.fillWidth: false
+                    text: stock
+                }
+                BadgePrice {
+                    Layout.fillWidth: false
+                    amount: price
+                    visible: price>0
+                }
+            }            
             Text {
                 text: barcode
                 font.pixelSize: 12
@@ -134,14 +134,6 @@ Rectangle {
                 maximumLineCount: 1
                 fontSizeMode: Text.HorizontalFit
                 minimumPixelSize: 12
-            }
-            Text {
-                // visible: stock>1 && !compact
-                font.pixelSize: 12
-                minimumPixelSize: 10
-                fontSizeMode: Text.HorizontalFit
-                color: "#181818"
-                text: qsTr("Stock: ")+stock
             }
         }
 

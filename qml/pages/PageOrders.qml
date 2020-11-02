@@ -5,9 +5,9 @@
  * or if user has enough priviledges, the system orders.
  *
  */
-import QtQuick 2.9
+import QtQuick 2.12
 import QtQml 2.2
-import QtQuick.Controls 2.4
+import QtQuick.Controls 2.12
 import QtQuick.Dialogs 1.2
 import QtQuick.Layouts 1.3
 import QtQuick.Controls.Material 2.1
@@ -33,6 +33,13 @@ Page {
     function refreshOrders(f) {
         orderStatus=f;
         root.api.orders(f);
+    }
+
+    function doListRefreshOrBeginning(op) {
+        if (orders.atYBeginning)
+            refreshOrders(op);
+        else
+            orders.positionViewAtBeginning();
     }
 
     Keys.onReleased: {
@@ -77,28 +84,8 @@ Page {
         id: toolbar
         enableBackPop: true
         enableMenuButton: false
-        visibleMenuButton: false
-        //onMenuButton: cameraMenu.open();
-    }
-
-    footer: ToolBar {
-        RowLayout {
-            ToolButton {                
-                text: qsTr("Pending")
-                enabled: !api.busy
-                onClicked: {
-                    refreshOrders(ServerApi.OrderPending);
-                }
-            }
-            ToolButton {
-                text: qsTr("In progress")
-                enabled: !api.busy
-                onClicked: {                    
-                    refreshOrders(ServerApi.OrderProcessing);
-                }
-            }
-        }
-    }
+        visibleMenuButton: false        
+    }    
 
     MessagePopup {
         id: messagePopup
@@ -107,24 +94,52 @@ Page {
     ColumnLayout {
         id: mainContainer
         anchors.fill: parent
-        anchors.margins: 4
+        anchors.margins: 4                
 
-        Label {            
+        TabBar {
+            Layout.fillWidth: true
+            Layout.alignment: Qt.AlignTop
+            enabled: !api.busy
+            TabButton {
+                text: qsTr("Pending")
+                onClicked: {
+                    doListRefreshOrBeginning(ServerApi.OrderPending);
+                }
+            }
+            TabButton {
+                text: qsTr("Processing")
+                onClicked: {
+                    doListRefreshOrBeginning(ServerApi.OrderProcessing);
+                }
+            }
+            TabButton {
+                text: qsTr("Complete")
+                onClicked: {
+                    doListRefreshOrBeginning(ServerApi.OrderComplete);
+                }
+            }
+        }
+
+        Text {
             visible: orders.model.count===0 && !api.busy
             text: qsTr("No orders")
             wrapMode: Text.Wrap
+            horizontalAlignment: Text.AlignHCenter
             font.pixelSize: 32
+            Layout.fillWidth: true
         }
 
-        ListView {
+        ListViewRefresh {
             id: orders            
             clip: true
             Layout.fillWidth: true
             Layout.fillHeight: true
             enabled: !api.busy
+            visible: orders.model.count>0 && !api.busy
 
             ScrollIndicator.vertical: ScrollIndicator { }
 
+            /*
             header: Component {
                 Text {
                     id: name
@@ -133,6 +148,7 @@ Page {
                     horizontalAlignment: Text.AlignHCenter
                 }
             }
+            */
 
             delegate: Component {
                 OrderItemDelegate {
@@ -149,7 +165,8 @@ Page {
                     }
                 }
             }
-        }
+            onRefreshTriggered: refreshOrders(orderStatus)
+        }                
     }
 
     BusyIndicator {

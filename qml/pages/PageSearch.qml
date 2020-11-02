@@ -4,9 +4,9 @@
  * Displays a list of products, can be used for both searching and browsing
  *
  */
-import QtQuick 2.9
+import QtQuick 2.12
 import QtQml 2.2
-import QtQuick.Controls 2.4
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 import net.ekotuki 1.0
@@ -25,8 +25,6 @@ Page {
     property bool isInitialView: true
 
     property alias model: searchResults.model
-
-    property ItemModel cartModel;
 
     signal searchRequested(string str, string category, int sort);
     signal searchBarcodeRequested(string barcode);
@@ -75,6 +73,11 @@ Page {
         searchDrawer.open()
     }
 
+    function resetSearch() {
+        searchDrawerContainer.resetSearch();
+        searchRequested('', '', sortOrder);
+    }
+
     Keys.onReleased: {
         switch (event.key) {
         case Qt.Key_Back:
@@ -90,15 +93,15 @@ Page {
             searchResults.maybeTriggerLoadMore();
             event.accepted=true;
             break;
-        case Qt.Key_Space:            
+        case Qt.Key_Space:
             searchResults.flick(0, -searchResults.maximumFlickVelocity)
             event.accepted=true;
             break;
-        case Qt.Key_PageDown:            
+        case Qt.Key_PageDown:
             searchResults.flick(0, -searchResults.maximumFlickVelocity)
             event.accepted=true;
             break;
-        case Qt.Key_PageUp:            
+        case Qt.Key_PageUp:
             searchResults.flick(0, searchResults.maximumFlickVelocity)
             event.accepted=true;
             break;
@@ -109,9 +112,8 @@ Page {
         }
     }
 
-    Component.onCompleted: {        
+    Component.onCompleted: {
         model=root.api.getItemModel();
-        cartModel=root.api.getCartModel();
         searchResults.currentIndex=-1;
         if (searchString.length>0) {
             console.debug("Created with pre-populated search string: "+searchString)
@@ -126,7 +128,7 @@ Page {
     Component.onDestruction: {
         console.debug("*** Destroy: "+objectName)
         //model.clear();
-    }      
+    }
 
     footer: ToolBar {
         RowLayout {
@@ -134,8 +136,8 @@ Page {
                 // XXX: Icons!
                 id: tbViewType
                 visible: searchResults.model.count>1
-                text: searchResults.rowItems==1 ? qsTr("Grid") : qsTr("List")
-                icon.source: searchResults.rowItems==1 ? "qrc:/images/icon_grid.png" : "qrc:/images/icon_list.png"
+                //text: searchResults.rowItems==1 ? qsTr("Grid") : qsTr("List")
+                icon.source: searchResults.rowItems!=1 ? "qrc:/images/icon_grid.png" : "qrc:/images/icon_list.png"
                 onClicked: {
                     if (searchResults.rowItems==1)
                         searchResults.rowItems=itemsPerRow;
@@ -146,7 +148,20 @@ Page {
             ToolButton {
                 id: tbSortOrder
                 visible: searchResults.model.count>1
-
+                //text: qsTr("Sort")
+                icon.source: sortOrder==ServerApi.SortDateDesc ? "qrc:/images/icon_sort_asc.png" : "qrc:/images/icon_sort_desc.png"
+                onClicked: {
+                    sortOrder=sortOrder==ServerApi.SortDateDesc ? ServerApi.SortDateAsc : ServerApi.SortDateDesc;
+                    searchRequested('', '', sortOrder);
+                }
+            }
+            ToolButton {
+                id: tbRefresh
+                //text: qsTr("Refresh")
+                icon.source: "qrc:/images/icon_refresh.png"
+                onClicked: {
+                    searchRequested('', '', sortOrder);
+                }
             }
         }
     }
@@ -184,17 +199,27 @@ Page {
 
         // Browse mode
         Label {
-            visible: searchResults.count==0 && !searchVisible && !isInitialView
+            visible: searchResults.count==0 && !searchVisible && !isInitialView && !api.busy
             text: qsTr("No products available in selected category")
             wrapMode: Text.Wrap
             font.pixelSize: 32
+            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
         }
 
         Label {
-            visible: searchResults.count==0 && searchString.length!=0 && !searchActive && !isInitialView
+            visible: searchResults.count==0 && searchString.length!=0 && !searchActive && !isInitialView && !api.busy
             text: qsTr("No products found")
             wrapMode: Text.Wrap
             font.pixelSize: 32
+            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
+        }
+
+        Label {
+            visible: searchResults.count==0 && isInitialView && !api.busy
+            text: qsTr("No products available")
+            wrapMode: Text.Wrap
+            font.pixelSize: 32
+            Layout.alignment: Qt.AlignHCenter | Qt.AlignVCenter
         }
 
         Component {
@@ -231,7 +256,7 @@ Page {
                 ProductItemDelegate {
                     width: searchResults.cellWidth
                     height: searchResults.cellHeight
-                    onClicked: {                        
+                    onClicked: {
                         productMenu.popup();
                     }
 
@@ -239,7 +264,7 @@ Page {
                         openProductAtIndex(index)
                     }
 
-                    onPressandhold: {                        
+                    onPressandhold: {
                         popupProductImageAtIndex(index);
                     }
 
@@ -266,6 +291,7 @@ Page {
                         }
                         MenuItem {
                             text: qsTr("Add to cart")
+                            enabled: searchPage.model.get(index).stock>0
                             onClicked: {
                                 addProductAtIndexToCart(index);
                             }
@@ -274,9 +300,6 @@ Page {
 
                     function addProductAtIndexToCart(index) {
                         var p=searchPage.model.get(index);
-                        // XXX: Use proper Cart API for this
-                        //cartModel.append(p.barcode);
-                        //root.showCart();
                         if (!api.addToCart(p.barcode, 1)) {
 
                         }
@@ -296,7 +319,7 @@ Page {
 
                     function popupProductImageAtIndex(index) {
                         var p=searchPage.model.get(index);
-                        imagePopup.showPopupImage(p.thumbnail)
+                        imagePopup.showPopupImage(p.title, p.thumbnail)
                     }
 
                     function popupProductImageClose() {
@@ -363,9 +386,11 @@ Page {
         rightMargin: 32
 
         property alias source: popupImage.source
+        property alias title: popupTitle.text
 
-        function showPopupImage(s) {
+        function showPopupImage(t, s) {
             console.debug("PopupImage: "+s)
+            popupTitle.text=t;
             popupImage.source=s;
             imagePopup.open();
         }
@@ -380,54 +405,61 @@ Page {
         x: Math.round((parent.width - width) / 2)
         y: Math.round((parent.height - height) / 2)
 
-        /* Text {
-            id: name
-            text: qsTr("Problem loading image")
-            font.pixelSize: 26
-            anchors.centerIn: parent
-            visible: popupImage.status==Image.Error
-        }*/
-
-        Image {
-            id: popupImage            
+        ColumnLayout {
             anchors.fill: parent
-            asynchronous: true
-            cache: false
-            smooth: true            
-            sourceSize.width: searchPage.width-64
-            sourceSize.height: searchPage.height-64
 
-            property double ratio: width/height
+            Text {
+                id: popupTitle
+                Layout.fillWidth: true
+                text: productTitle
+                horizontalAlignment: Text.AlignHCenter
+                font.pixelSize: 18
+                elide: Text.ElideMiddle
+            }
 
-            onStatusChanged: {
-                console.debug("popupImage:"+status)
-                switch (status) {
-                case Image.Ready:
-                    console.debug("Loaded")
-                    imagePopup.y=searchPage.height/2-imagePopup.height/2
-                    break;
-                case Image.Error:
-                    console.debug("Failed to load")
-                    //imagePopup.close();
-                    break;
-                case Image.Loading:
-                    console.debug("Loading")
-                    break;
+            Image {
+                id: popupImage
+                //anchors.fill: parent
+                Layout.fillWidth: true
+                asynchronous: true
+                cache: false
+                smooth: true
+                sourceSize.width: searchPage.width-64
+                sourceSize.height: searchPage.height-64
+
+                property double ratio: width/height
+
+                onStatusChanged: {
+                    console.debug("popupImage:"+status)
+                    switch (status) {
+                    case Image.Ready:
+                        console.debug("Loaded")
+                        imagePopup.y=searchPage.height/2-imagePopup.height/2
+                        break;
+                    case Image.Error:
+                        console.debug("Failed to load")
+                        //imagePopup.close();
+                        break;
+                    case Image.Loading:
+                        console.debug("Loading")
+                        break;
+                    }
+
                 }
 
+                MouseArea {
+                    anchors.fill: parent
+                    onReleased: imagePopup.close()
+                }
+                ProgressBar {
+                    width: popupImage.width/2
+                    height: 64
+                    anchors.centerIn: parent
+                    visible: popupImage.status==Image.Loading
+                    value: popupImage.progress
+                }
             }
 
-            MouseArea {
-                anchors.fill: parent
-                onReleased: imagePopup.close()
-            }
-            ProgressBar {
-                width: popupImage.width/2
-                height: 64
-                anchors.centerIn: parent
-                visible: popupImage.status==Image.Loading
-                value: popupImage.progress
-            }
         }
 
         onOpened: {
@@ -435,7 +467,7 @@ Page {
             forceActiveFocus();
         }
 
-        onClosed: {            
+        onClosed: {
             popupImage.source='';
         }
     }
@@ -466,12 +498,14 @@ Page {
                     maximumLength: 64
                     Layout.fillWidth: true
                     focus: true
-                    enabled: !searchActive
+                    enabled: !api.busy
+                    inputMethodHints: Qt.ImhNoPredictiveText;
 
                     property bool validInput: length>0 && text.trim()!='';
 
                     onAccepted: {
-                        searchDrawerContainer.activateSearch();
+                        if (searchDrawerContainer.activateSearch())
+                            searchDrawer.close()
                     }
                     onLengthChanged: {
                         if (length==0)
@@ -485,10 +519,11 @@ Page {
                     }
                 }
                 RoundButton {
-                    text: "Clear"
+                    text: qsTr("Clear")
                     enabled: searchText.length>0
                     onClicked: {
                         searchDrawerContainer.resetSearch();
+                        searchText.forceActiveFocus();
                     }
                 }
             }
@@ -498,7 +533,7 @@ Page {
             onValidSearchCriteriasChanged: console.debug("CanSearch: "+validSearchCriterias)
 
             function activateSearch() {
-                if (!validSearchCriterias) {                    
+                if (!validSearchCriterias) {
                     return false;
                 }
 
@@ -506,7 +541,7 @@ Page {
                 if (api.validateBarcode(searchString))
                     searchBarcodeRequested(searchString);
                 else
-                    searchRequested(searchString, categorySearchID, sortOrder);                
+                    searchRequested(searchString, categorySearchID, sortOrder);
                 return true;
             }
 
@@ -609,7 +644,7 @@ Page {
                             searchDrawer.close()
                     }
                 }
-                RoundButton {                    
+                RoundButton {
                     text: qsTr("Scan")
                     icon.source: "qrc:/images/icon_camera.png"
                     Layout.alignment: Qt.AlignCenter
@@ -622,13 +657,12 @@ Page {
                     // XXX: Icon!
                     text: qsTr("Reset")
                     onClicked: {
-                        searchDrawerContainer.resetSearch();
-                        searchRequested('', '', sortOrder);
+                        resetSearch();
                         searchDrawer.close()
                     }
                 }
 
-                // XXX: Not really needed this
+                // XXX: Not really needed
                 RoundButton {
                     icon.source: "qrc:/images/icon_cancel.png"
                     visible: false
@@ -653,7 +687,7 @@ Page {
         anchors.bottom: parent.bottom
         anchors.rightMargin: 16
         anchors.bottomMargin: 16
-        height: 48        
+        height: 48
         RoundButton {
             id: buttonUp
             text: qsTr("Up")
@@ -669,7 +703,7 @@ Page {
             id: buttonDown
             text: qsTr("Down")
             icon.source: "qrc:/images/icon_down.png"
-            property bool maybeVisible: searchResults.model && searchResults.model.count>10 && !searchResults.atYEnd            
+            property bool maybeVisible: searchResults.model && searchResults.model.count>10 && !searchResults.atYEnd
             visible: maybeVisible
             opacity: maybeVisible ? 1 : 0;
             onClicked: {
@@ -677,7 +711,7 @@ Page {
                 searchResults.maybeTriggerLoadMore();
             }
         }
-    }        
+    }
 
     BusyIndicator {
         id: busyIndicator

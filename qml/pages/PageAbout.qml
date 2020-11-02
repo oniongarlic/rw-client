@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 import "../components"
 
@@ -27,7 +27,7 @@ Page {
             fillMode: Image.PreserveAspectCrop
             anchors.fill: parent
             opacity: 0.4
-            source: "qrc:/images/bg/bg.jpg"
+            source: "qrc:/profiles/turku/images/bg/bg.jpg"
         }
     }
 
@@ -49,9 +49,16 @@ Page {
         Text {
             Layout.fillWidth: true
             horizontalAlignment: Text.AlignHCenter
-            font.pixelSize: 16
+            font.pixelSize: 14
             wrapMode: Text.WrapAtWordBoundaryOrAnywhere
             text: "Uses icons from the Subway icon set\nCC BY 4.0"
+        }
+        Text {
+            Layout.fillWidth: true
+            horizontalAlignment: Text.AlignHCenter
+            font.pixelSize: 14
+            wrapMode: Text.WrapAtWordBoundaryOrAnywhere
+            text: "Maps © OpenStreetMap contributors\nODbL"
         }
         ColumnLayout {
             visible: root.updateAvailable

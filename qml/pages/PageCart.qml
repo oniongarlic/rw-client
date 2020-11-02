@@ -4,12 +4,12 @@
  * Displays the users shopping cart with a list of products to order with barcode input
  *
  */
-import QtQuick 2.9
-import QtQml 2.2
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQml 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Dialogs 1.2
-import QtQuick.Layouts 1.3
-import QtQuick.Controls.Material 2.1
+import QtQuick.Layouts 1.12
+import QtQuick.Controls.Material 2.12
 
 import net.ekotuki 1.0
 
@@ -196,11 +196,12 @@ Page {
 
             ToolButton {
                 text: qsTr("Checkout")
-                enabled: orderCart.count>0 && !api.busy                
+                visible: api.hasRole("checkout")
+                enabled: orderCart.count>0 && !api.busy
                 onClicked: {
                     confirmDialog.open();
                 }
-            }           
+            }
         }
     }
 
@@ -267,7 +268,7 @@ Page {
             font.pixelSize: 32
         }
 
-        ListView {
+        ListViewRefresh {
             id: orderCart
             enabled: !searchActive
             clip: true
@@ -275,6 +276,10 @@ Page {
             Layout.fillHeight: true
 
             ScrollIndicator.vertical: ScrollIndicator { }
+
+            onRefreshTriggered: {
+                api.getUserCart();
+            }
 
             delegate: Component {
                 OrderLineItemDelegate {

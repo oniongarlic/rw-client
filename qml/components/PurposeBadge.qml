@@ -1,4 +1,4 @@
-import QtQuick 2.9
+import QtQuick 2.12
 
 Image {
     id: purposeBadge
@@ -9,6 +9,7 @@ Image {
     cache: true
     visible: purpose>0
     source: getPurposeBadge(purpose)
+    fillMode: Image.PreserveAspectFit
 
     signal clicked();
 

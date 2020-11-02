@@ -4,9 +4,9 @@
  * Displays a list of products in order
  *
  */
-import QtQuick 2.9
+import QtQuick 2.12
 import QtQml 2.2
-import QtQuick.Controls 2.4
+import QtQuick.Controls 2.12
 import QtQuick.Dialogs 1.2
 import QtQuick.Layouts 1.3
 import QtQuick.Controls.Material 2.1
@@ -105,7 +105,7 @@ Page {
 
         onProductFound: {
             console.debug("PageOrder: Product found!")
-            rootStack.push(productView, { "product": product })
+            rootStack.push(productView, { "product": product, "cartDisabled": true })
         }
 
         onProductNotFound: {
@@ -177,6 +177,7 @@ Page {
         SwipeView {
             id: orderSwipe
             Layout.fillWidth: true
+            Layout.fillHeight: true
             Layout.preferredHeight: orderPage.height/4
             Layout.maximumHeight: orderPage.height/3
             Layout.minimumHeight: orderPage.height/5
@@ -241,6 +242,7 @@ Page {
             clip: true
             Layout.fillWidth: true
             Layout.fillHeight: true
+            Layout.minimumHeight: orderPage.height/3
 
             ScrollIndicator.vertical: ScrollIndicator { }
 
@@ -248,6 +250,8 @@ Page {
                 OrderLineItemDelegate {
                     width: parent.width
                     height: childrenRect.height
+
+                    enablePickStatus: order.status!=OrderItem.Shipped
 
                     onClicked:  {
                         if (orderProducts.currentIndex==index)
@@ -272,7 +276,7 @@ Page {
                         x: parent.width/3
                         MenuItem {
                             text: qsTr("Set Picked")
-                            enabled: type=="product" && status!=OrderLineItem.OrderItemPicked
+                            enabled: type=="product" && status!=OrderLineItem.OrderItemPicked && order.status!=OrderItem.Shipped
                             onClicked: {
                                 status=OrderLineItem.OrderItemPicked
                             }
@@ -305,7 +309,7 @@ Page {
             Button {
                 Layout.fillWidth: true
                 visible: order.status==OrderItem.Cancelled
-                text: "Redo cancelled order"
+                text: qsTr("Redo cancelled order")
                 onClicked: {
                     api.updateOrderStatus(order, OrderItem.Pending);
                 }
@@ -313,7 +317,7 @@ Page {
             Button {
                 Layout.fillWidth: true
                 visible: order.status==OrderItem.Pending
-                text: "Start processing order"
+                text: qsTr("Start processing order")
                 onClicked: {
                     api.updateOrderStatus(order, OrderItem.Processing);
                 }
@@ -321,7 +325,7 @@ Page {
             Button {
                 Layout.fillWidth: true
                 visible: order.status==OrderItem.Processing
-                text: "Cancel order processing"
+                text: qsTr("Cancel order processing")
                 onClicked: {
                     api.updateOrderStatus(order, OrderItem.Pending);
                 }
@@ -329,7 +333,7 @@ Page {
             Button {
                 Layout.fillWidth: true
                 visible: order.status==OrderItem.Processing
-                text: "Mark order shipped"
+                text: qsTr("Mark order shipped")
                 onClicked: {
                     api.updateOrderStatus(order, OrderItem.Shipped);
                 }

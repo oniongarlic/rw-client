@@ -1,7 +1,7 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
-import QtMultimedia 5.5
+import QtMultimedia 5.12
 import net.ekotuki 1.0
 
 Item {
@@ -21,7 +21,9 @@ Item {
     property string barcode;
 
     // Metadata
-    property string metaSubject: ""
+    property string metaSubject;
+    property variant metaLatitude;
+    property variant metaLongitude;
 
     // Flash, for simplicity we just use Off/Auto
     property bool flash: false
@@ -62,12 +64,14 @@ Item {
         }
 
         metaData.subject: metaSubject
+        metaData.gpsLatitude: metaLatitude
+        metaData.gpsLongitude: metaLongitude
 
         imageCapture {
             onImageCaptured: {
                 console.debug("Image captured!")
                 console.debug(camera.imageCapture.capturedImagePath)
-                previewImage.source=preview
+                previewImage.source=preview;
             }
             onCaptureFailed: {
                 console.debug("Capture failed")
@@ -136,16 +140,6 @@ Item {
 
             filters: imageCapture ? [] : [ scanner ]
 
-            Image {
-                id: previewImage
-                fillMode: Image.PreserveAspectFit
-                width: 128
-                height: 128
-                anchors.left: parent.left
-                anchors.top: parent.top
-                opacity: 0.75
-            }
-
             MouseArea {
                 anchors.fill: parent
                 onClicked: {
@@ -163,42 +157,83 @@ Item {
                 }
             }
 
-            BusyIndicator {
-                anchors.centerIn: parent
-                visible: running
-                running: camera.lockStatus==Camera.Searching
-            }
-
-            Slider {
-                id: zoomDigitalSlider
-                anchors.right: parent.right
-                anchors.rightMargin: 32
-                anchors.topMargin: parent.height/12
-                anchors.bottomMargin: parent.height/12
-                anchors.top: parent.top
-                anchors.bottom: parent.bottom
-                visible: camera.maximumDigitalZoom>1
-                from: 1
-                value: 1
-                to: camera.maximumDigitalZoom
-                onValueChanged: camera.digitalZoom=value;
-                orientation: Qt.Vertical
-                ToolTip {
-                    parent: zoomDigitalSlider.handle
-                    visible: zoomDigitalSlider.pressed || zoomDigitalSlider.value>1.0
-                    text: zoomDigitalSlider.value.toFixed(1)
-                }
-            }
         }
 
         Text {
             id: barcodeText
+            visible: scanOnly
             Layout.fillWidth: true
             color: "red"
             text: cameraItem.barcode
             font.pointSize: 22
             horizontalAlignment: Text.AlignHCenter
         }
+    }
+
+    Image {
+        id: previewImage
+        fillMode: Image.PreserveAspectFit
+        width: Math.max(parent.width/6, 192)
+        height: Math.max(parent.height/6, 192)
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 16
+        opacity: zoomed ? 1 : 0.75
+        scale: zoomed ? 2 : 1
+        transformOrigin: Item.TopLeft
+
+        property bool zoomed: false
+
+        onStatusChanged: {
+            if (previewImage.status == Image.Ready) {
+                visible=true;
+                zoomed=false;
+            }
+        }
+
+        MouseArea {
+            id: previewMouse
+            anchors.fill: parent
+            onPressAndHold: {
+                previewImage.visible=false;
+            }
+            onClicked: {
+                previewImage.zoomed=!previewImage.zoomed
+            }
+        }
+        Behavior on scale {
+            ScaleAnimator {
+                duration: 200
+            }
+        }
+    }
+
+    Slider {
+        id: zoomDigitalSlider
+        anchors.right: parent.right
+        anchors.rightMargin: 32
+        anchors.topMargin: parent.height/12
+        anchors.bottomMargin: parent.height/12
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        visible: camera.maximumDigitalZoom>1
+        from: 1
+        value: 1
+        to: camera.maximumDigitalZoom
+        onValueChanged: camera.digitalZoom=value;
+        orientation: Qt.Vertical
+        ToolTip {
+            parent: zoomDigitalSlider.handle
+            visible: zoomDigitalSlider.pressed || zoomDigitalSlider.value>1.0
+            text: zoomDigitalSlider.value.toFixed(1)
+        }
+    }
+
+
+    BusyIndicator {
+        anchors.centerIn: parent
+        visible: running
+        running: camera.lockStatus==Camera.Searching
     }
 
     Popup {

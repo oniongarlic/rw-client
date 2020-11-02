@@ -25,7 +25,7 @@
         <file>qml/components/ComboBoxLabel.qml</file>
         <file>qml/pages/PageAbout.qml</file>
         <file>qml/components/ProductAttributeDetailItem.qml</file>
-        <file>qml/models/ColorModel.qml</file>
+        <file>qml/models/StaticColorModel.qml</file>
         <file>qml/models/PurposeModel.qml</file>
         <file>qml/models/NewsModel.qml</file>
         <file>qml/models/LatestProductsModel.qml</file>
@@ -46,5 +46,9 @@
         <file>qml/pages/PageCart.qml</file>
         <file>qml/delegates/OrderLineItemDelegate.qml</file>
         <file>qml/components/Badge.qml</file>
+        <file>qml/components/ListViewRefresh.qml</file>
+        <file>qml/components/PopupProgress.qml</file>
+        <file>qml/models/ManufacturerModel.qml</file>
+        <file>qml/components/BadgePrice.qml</file>
     </qresource>
 </RCC>

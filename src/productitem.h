@@ -21,7 +21,8 @@ class ProductItem : public QObject
     Q_PROPERTY(QString thumbnail READ thumbnail NOTIFY thumbnailChanged)
     Q_PROPERTY(QString category READ category WRITE setCategory NOTIFY categoryChanged)
     Q_PROPERTY(QString subCategory READ subCategory WRITE setSubCategory NOTIFY subCategoryChanged)
-    Q_PROPERTY(uint stock READ getStock NOTIFY stockChanged)    
+    Q_PROPERTY(uint stock READ getStock NOTIFY stockChanged)
+    Q_PROPERTY(uint warehouse READ getWarehouse NOTIFY warehouseChanged)
 
     // XXX:
     Q_PROPERTY(double price READ getPrice WRITE setPrice NOTIFY priceChanged)
@@ -35,16 +36,20 @@ public:
     ~ProductItem();
 
     static ProductItem* fromVariantMap(QVariantMap &data, QObject *parent = nullptr);
+    static ProductItem *fromProduct(ProductItem &data, QObject *parent = nullptr);
 
     enum ImageSource { UnknownSource=0, CameraSource, GallerySource, RemoteSource };
 
+    Q_INVOKABLE bool isNew() const;
     Q_INVOKABLE uint getID() const;
     Q_INVOKABLE const QString getBarcode() const;
     Q_INVOKABLE const QString getTitle() const;
     Q_INVOKABLE const QString getDescription() const;
     Q_INVOKABLE uint getOwner() const;
     Q_INVOKABLE uint getStock() const;
+    Q_INVOKABLE uint getWarehouse() const;
     Q_INVOKABLE QDateTime getCreated() const;
+    Q_INVOKABLE QDateTime getModified() const;
 
     Q_INVOKABLE void addImage(const QVariant image, const ImageSource source);
     Q_INVOKABLE void removeImages();
@@ -54,6 +59,7 @@ public:
     Q_INVOKABLE QVariant getAttribute(const QString key) const;
     Q_INVOKABLE void setAttribute(const QString key, const QVariant value);
     Q_INVOKABLE bool clearAttribute(const QString key);
+    Q_INVOKABLE QVariantMap getAttributes() const;
 
     Q_INVOKABLE void setStock(uint stock);
     Q_INVOKABLE void setTitle(QString title);
@@ -135,6 +141,8 @@ signals:
 
     void stockChanged(uint stock);
 
+    void warehouseChanged(uint warehouse);
+
     void attributesChanged(const QString key, const QVariant value);
 
     void taxChanged(uint tax);
@@ -171,11 +179,13 @@ private:
     QString m_subcategory;
 
     QDateTime m_created;
+    QDateTime m_modified;
 
     QVariantMap m_attributes;
     QString m_thumbnail;
 
     uint m_stock;
+    uint m_warehouse;
 
     uint m_tax;
     double m_price;

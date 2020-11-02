@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 import "../delegates"
@@ -22,6 +22,14 @@ Page {
         visibleMenuButton: false
     }
 
+    Keys.onReleased: {
+        if (event.key === Qt.Key_Back) {
+            console.log("*** Back button")
+            event.accepted = true;
+            rootStack.pop()
+        }
+    }
+
     Rectangle {
         color: "#e8e8e8"
         anchors.fill: parent
@@ -29,24 +37,13 @@ Page {
             fillMode: Image.PreserveAspectCrop
             anchors.fill: parent
             opacity: 0.4
-            source: "qrc:/images/bg/bg.jpg"
+            source: root.imageBackground
         }
     }
 
     ColumnLayout {
         id: columnLayout1
-        anchors.fill: parent
-
-        Image {
-            id: image1
-            fillMode: Image.PreserveAspectFit
-            Layout.alignment: Qt.AlignHCenter | Qt.AlignTop
-            opacity: 0.9
-            source: "/images/logo.png"
-            //Layout.fillHeight: true
-            Layout.fillWidth: true
-            Layout.margins: 16
-        }
+        anchors.fill: parent        
 
         ListView {
             id: listLatestNews

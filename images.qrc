@@ -62,5 +62,24 @@
         <file>images/icon_cancel.png</file>
         <file>images/icon_up.png</file>
         <file>images/icon_down.png</file>
+        <file>images/icon_messages.png</file>
+        <file>images/icon_refresh.png</file>
+        <file>images/icon_bag.png</file>
+        <file>images/icon_cart.png</file>
+        <file>images/icon_cart@4x.png</file>
+        <file>images/icon_delete.png</file>
+        <file>images/icon_login.png</file>
+        <file>images/icon_add@4x.png</file>
+        <file>images/icon_at@4x.png</file>
+        <file>images/icon_attachment@4x.png</file>
+        <file>images/icon_login@4x.png</file>
+        <file>images/icon_messages@4x.png</file>
+        <file>images/icon_bag@4x.png</file>
+        <file>images/icon_at.png</file>
+        <file>images/icon_sort_desc@4x.png</file>
+        <file>images/icon_sort_asc@4x.png</file>
+        <file>images/icon_sort_desc.png</file>
+        <file>images/icon_sort_asc.png</file>
+        <file>images/logo.png</file>
     </qresource>
 </RCC>

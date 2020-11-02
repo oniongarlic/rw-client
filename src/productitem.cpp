@@ -1,6 +1,7 @@
 #include "productitem.h"
 
 #include <QDebug>
+#include <QFile>
 
 ProductItem::ProductItem(QObject *parent)
     : QObject(parent)
@@ -22,6 +23,7 @@ ProductItem::ProductItem(const QString &barcode, const QString &title, const QSt
     , m_title(title)        
     , m_description(description)
     , m_stock(1)
+    , m_warehouse(0)
     , m_tax(0)
     , m_price(0.0)
     , m_keepImages(true)
@@ -37,12 +39,18 @@ ProductItem* ProductItem::fromVariantMap(QVariantMap &data, QObject *parent)
     p->setTitle(data["title"].toString());
     p->setCategory(data["category"].toString());
     p->setSubCategory(data["subcategory"].toString());
+    p->setDescription(data["description"].toString());
 
     p->m_id=data["id"].toString().toUInt();
     if (p->m_id==0)
         qWarning() << "Failed to get product ID, invalid data ? " << data;
 
     p->m_uid=data["uid"].toString().toUInt();
+
+    if (data.contains("location"))
+        p->m_warehouse=data["location"].toString().toUInt();
+    else
+        p->m_warehouse=0;
 
     if (data.contains("stock"))
         p->m_stock=data["stock"].toString().toDouble();
@@ -60,6 +68,7 @@ ProductItem* ProductItem::fromVariantMap(QVariantMap &data, QObject *parent)
         p->m_tax=0;
 
     p->m_created=QDateTime::fromSecsSinceEpoch(data["created"].toString().toLong());
+    p->m_modified=QDateTime::fromSecsSinceEpoch(data["modified"].toString().toLong());
 
     if (data.contains("value"))
         p->setAttribute("value", data["value"].toUInt());
@@ -84,7 +93,7 @@ ProductItem* ProductItem::fromVariantMap(QVariantMap &data, QObject *parent)
     // XXX: Loop over valid attributes ?
 
     if (data.contains("color"))
-        p->setAttribute("color", data["color"].toString().toDouble());
+        p->setAttribute("color", data["color"].toList());
 
     if (data.contains("purpose"))
         p->setAttribute("purpose", data["purpose"].toString().toDouble());
@@ -98,8 +107,36 @@ ProductItem* ProductItem::fromVariantMap(QVariantMap &data, QObject *parent)
     if (data.contains("isbn"))
         p->setAttribute("isbn", data["isbn"].toString());
 
+    if (data.contains("model"))
+        p->setAttribute("model", data["model"].toString());
+
+    if (data.contains("manufacturer"))
+        p->setAttribute("manufacturer", data["manufacturer"].toString());
 
     return p;
+}
+
+ProductItem* ProductItem::fromProduct(ProductItem &pi, QObject *parent)
+{
+    ProductItem *p=new ProductItem(parent);
+
+    p->setTitle(pi.title());
+    p->setCategory(pi.category());
+    p->setSubCategory(pi.subCategory());
+    p->setDescription(pi.description());
+
+    p->m_price=pi.m_price;
+    p->m_tax=pi.m_tax;
+    p->m_stock=pi.m_stock;
+    p->m_warehouse=pi.m_warehouse;
+    p->m_attributes=pi.m_attributes;
+
+    return p;
+}
+
+bool ProductItem::isNew() const
+{
+    return m_id==0 ? true : false;
 }
 
 ProductItem::~ProductItem()
@@ -122,9 +159,19 @@ uint ProductItem::getStock() const
     return m_stock;
 }
 
+uint ProductItem::getWarehouse() const
+{
+    return m_warehouse;
+}
+
 QDateTime ProductItem::getCreated() const
 {
     return m_created;
+}
+
+QDateTime ProductItem::getModified() const
+{
+    return m_modified;
 }
 
 const QString ProductItem::getBarcode() const
@@ -176,6 +223,12 @@ bool ProductItem::clearAttribute(const QString key)
         emit attributesChanged(key, QVariant());
 
     return r;
+}
+
+QVariantMap ProductItem::getAttributes() const
+{
+    qDebug() << m_attributes;
+    return m_attributes;
 }
 
 void ProductItem::setStock(uint stock)

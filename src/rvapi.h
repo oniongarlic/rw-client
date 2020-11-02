@@ -9,6 +9,8 @@
 #include <QtNetwork/QHttpMultiPart>
 #include <QtNetwork/QHttpPart>
 
+#include <QNetworkConfigurationManager>
+
 #include <QSsl>
 #include <QSslError>
 
@@ -33,6 +35,12 @@
 #include "ordersmodel.h"
 #include "orderlineitem.h"
 #include "orderlineitemmodel.h"
+
+#include "organizationitem.h"
+#include "organizationmodel.h"
+
+#include "coloritem.h"
+#include "colormodel.h"
 
 class RvAPI : public QObject
 {
@@ -59,6 +67,8 @@ class RvAPI : public QObject
     Q_PROPERTY(QString searchCategory MEMBER m_searchcategory NOTIFY searchCategoryChanged)
     Q_PROPERTY(QString searchString MEMBER m_searchstring NOTIFY searchStringChanged)
     Q_PROPERTY(ItemSort searchSort MEMBER m_searchsort NOTIFY searchSortChanged)
+
+    Q_PROPERTY(bool isonline READ isOnline NOTIFY isOnlineChanged)
 
 public:
     explicit RvAPI(QObject *parent = nullptr);
@@ -137,6 +147,7 @@ public:
     quint8 downloadProgress() const { return m_downloadProgress; }
 
     Q_INVOKABLE bool login();
+    Q_INVOKABLE bool loginCancel();
     Q_INVOKABLE bool logout();
 
     Q_INVOKABLE void setAppVersion(uint ver);    
@@ -153,9 +164,12 @@ public:
 
     Q_INVOKABLE bool requestLocations();
     Q_INVOKABLE bool requestCategories();
+    Q_INVOKABLE bool requestColors();
 
     Q_INVOKABLE bool validateBarcode(const QString barcode) const;
     Q_INVOKABLE bool validateBarcodeEAN(const QString code) const;
+
+    Q_INVOKABLE OrganizationModel *getOrganizationModel();
 
     Q_INVOKABLE ItemListModel *getItemModel();
     Q_INVOKABLE OrderLineItemModel *getCartModel();
@@ -165,6 +179,8 @@ public:
     Q_INVOKABLE CategoryModel *getSubCategoryModel(const QString key);
 
     Q_INVOKABLE QStringListModel *getTaxModel();
+
+    Q_INVOKABLE ColorModel *getColorModel();
 
     Q_INVOKABLE bool downloadUpdate();
 
@@ -195,6 +211,12 @@ public:
     Q_INVOKABLE void clearCache();
 
     Q_INVOKABLE bool hasRole(const QString &role);
+
+    bool isOnline() const
+    {
+        return m_isonline;
+    }
+
 signals:
 
     void urlChanged(QUrl url);
@@ -211,6 +233,7 @@ signals:
 
     void loginSuccesfull();
     void loginFailure(const QString msg, int code);
+    void loginCanceled();
 
     void authenticationFailure();
 
@@ -256,6 +279,8 @@ signals:
     void searchStringChanged();
     void searchSortChanged();
 
+    void isOnlineChanged(bool isonline);
+
 public slots:
 
     void setUrl(QUrl url);
@@ -299,6 +324,7 @@ private slots:
     void downloadProgress(qint64 bytes, qint64 total);
     void requestError(QNetworkReply::NetworkError code);
     void requestFinished();
+    void onNetworkOnlineChanged(bool online);
 
 private:
     enum RequestOps {
@@ -307,8 +333,7 @@ private:
         ProductSearch, ProductSearchBarcode, ProductAdd, ProductUpdate, Product, Products,
         Order, Orders, OrderUpdateStatus,
         Cart, ClearCart, AddToCart, CheckoutCart,
-        Categories,
-        Locations,
+        Categories, Locations, Colors,
         DownloadAPK,
     };
 
@@ -336,8 +361,10 @@ private:
     const QString op_products_search=QStringLiteral("products/search");
     const QString op_product_get=QStringLiteral("products/barcode");
 
+    // Dynamic meta data lists
     const QString op_locations=QStringLiteral("locations");
     const QString op_categories=QStringLiteral("categories");
+    const QString op_colors=QStringLiteral("colors");
 
     const QString op_download=QStringLiteral("download/apk");
 
@@ -375,6 +402,9 @@ private:
     uint m_uid;
     QDateTime m_lastlogin;
 
+    QNetworkConfigurationManager *m_netconf;
+    bool m_isonline;
+
     bool m_busy;
 
     bool m_hasMore;
@@ -389,7 +419,8 @@ private:
     ProductMap m_product_store;
 
     QObjectList m_orders;
-
+    OrganizationModel m_organization_model;
+    ColorModel m_color_model;
     ItemListModel m_itemsmodel;
     OrderLineItemModel m_cartmodel;
     CategoryModel m_categorymodel;
@@ -411,6 +442,8 @@ private:
     QNetworkReply *get(QNetworkRequest &request);
     QNetworkReply *head(QNetworkRequest &request);
 
+    bool cancelOperation(RequestOps op);
+
     void queueRequest(QNetworkReply *req, RequestOps op);
     bool createSimpleAuthenticatedRequest(const QString opurl, RequestOps op, QVariantMap *params=nullptr);
     bool createSimpleAuthenticatedPostRequest(const QString opurl, RequestOps op, QVariantMap *params=nullptr);
@@ -422,17 +455,21 @@ private:
     void parseErrorResponse(int code, QNetworkReply::NetworkError e, RequestOps op, const QByteArray &response);
     bool parseLocationData(QVariantMap &data);
     bool parseCategoryData(QVariantMap &data);
+    bool parseColorsData(QVariantMap &data);
+    void createStaticColorModel();
     bool parseProductData(QVariantMap &data, const QNetworkAccessManager::Operation method);
     bool parseProductsData(QVariantMap &data);
     bool parseLogin(QVariantMap &data);
     bool parseLogout();
     bool parseFileDownload(const QByteArray &data);
-    void parseCategoryMap(const QString key, CategoryModel &model, QVariantMap &tmp);
+    void parseCategoryMap(const QString key, CategoryModel &model, QVariantMap &tmp, CategoryModel::FeatureFlags flags);
     bool parseOrderCreated(QVariantMap &data);
     bool parseOrders(QVariantMap &data);    
     bool parseOrderStatusUpdate(QVariantMap &data);
     bool parseCart(QVariantMap &data);
     bool parseCartCheckout(QVariantMap &data);
+
+    void clearSession();
 
     void setBusy(bool busy);       
 

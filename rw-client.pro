@@ -5,11 +5,44 @@ QT += positioning
 
 CONFIG += c++11
 
+defineTest(minQtVersion) {
+    maj = $$1
+    min = $$2
+    patch = $$3
+    isEqual(QT_MAJOR_VERSION, $$maj) {
+        isEqual(QT_MINOR_VERSION, $$min) {
+            isEqual(QT_PATCH_VERSION, $$patch) {
+                return(true)
+            }
+            greaterThan(QT_PATCH_VERSION, $$patch) {
+                return(true)
+            }
+        }
+        greaterThan(QT_MINOR_VERSION, $$min) {
+            return(true)
+        }
+    }
+    greaterThan(QT_MAJOR_VERSION, $$maj) {
+        return(true)
+    }
+    return(false)
+}
+
+!minQtVersion(5, 14, 0) {
+    message("Cannot build RW-Client with Qt version $${QT_VERSION}.")
+    error("Use at least Qt 5.14.0.")
+}
+
 # Create your own build profile first, copy profile.pri.sample to profile.pri
 # and adjust for your system. Don't change this line.
 include(profile.pri)
 
 HEADERS += \
+    src/coloritem.h \
+    src/colormodel.h \
+    src/eanvalidator.h \
+    src/organizationitem.h \
+    src/organizationmodel.h \
     src/rvapi.h \
     src/itemlistmodel.h \
     src/productitem.h \
@@ -22,9 +55,15 @@ HEADERS += \
     src/baselistmodel.h \
     src/orderitem.h \
     src/orderlineitem.h \
-    src/orderlineitemmodel.h
+    src/orderlineitemmodel.h \
+    src/rwnetworkaccessmanagerfactory.h
 
 SOURCES += src/main.cpp \
+    src/coloritem.cpp \
+    src/colormodel.cpp \
+    src/eanvalidator.cpp \
+    src/organizationitem.cpp \
+    src/organizationmodel.cpp \
     src/rvapi.cpp \
     src/itemlistmodel.cpp \
     src/productitem.cpp \
@@ -36,7 +75,8 @@ SOURCES += src/main.cpp \
     src/baselistmodel.cpp \
     src/orderitem.cpp \
     src/orderlineitem.cpp \
-    src/orderlineitemmodel.cpp
+    src/orderlineitemmodel.cpp \
+    src/rwnetworkaccessmanagerfactory.cpp
 
 lupdate_only {
     SOURCES +=  qml/*.qml qml/components/*.qml qml/pages/*.qml qml/delegates/*.qml qml/models/*.qml
@@ -114,6 +154,10 @@ for(tsfile, TRANSLATIONS) {
 #QMAKE_EXTRA_TARGETS ''= ts-all
 
 DISTFILES += \
+    qml/components/BadgePrice.qml \
     qml/pages/PageCart.qml
 
+ANDROID_ABIS = armeabi-v7a
 
+
+android: include(/home/milang/Android/Sdk/android_openssl/openssl.pri)

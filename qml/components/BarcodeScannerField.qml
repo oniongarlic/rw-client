@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.3
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 import "../pages"
@@ -15,10 +15,13 @@ RowLayout {
     signal validateBarcode(string barcode)
     property bool scannerEnabled: true
 
+    property alias isOptional: barcodeText.isOptional
+
     property alias text: barcodeText.text
     property alias placeholderText: barcodeText.placeholderText
     property alias validator: barcodeText.validator
     property alias acceptableInput: barcodeText.acceptableInput
+    property alias inputMethodHints: barcodeText.inputMethodHints
 
     BarcodeField {
         id: barcodeText
@@ -40,9 +43,19 @@ RowLayout {
     RoundButton {
         text: qsTr("Scan")
         enabled: !barcodeText.acceptableInput && scannerEnabled
+        visible: scannerEnabled
         icon.source: "qrc:/images/icon_camera.png"
         onClicked: {
             rootStack.push(cameraScanner);
+        }
+    }
+
+    RoundButton {
+        text: qsTr("Clear")
+        visible: barcodeText.acceptableInput && scannerEnabled
+        icon.source: "qrc:/images/icon_delete.png"
+        onClicked: {
+            barcodeText.clear()
         }
     }
 

@@ -1,17 +1,19 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 
 TextField {
     id: productPrice
-    inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhFormattedNumbersOnly
+    inputMethodHints: Qt.ImhPreferNumbers | Qt.ImhFormattedNumbersOnly | Qt.ImhNoPredictiveText
     placeholderText: qsTr("Price")
     background: Rectangle {
         color: "transparent"
-        border.color: parent.acceptableInput ? "green" : "red"
+        border.color: parent.acceptableInput ? "green" : isOptional ? "yellow" : "red"
     }
     leftPadding: 4
     rightPadding: 4
     verticalAlignment: TextInput.AlignVCenter
+
+    property bool isOptional: true
 
     property double price;
     signal invalidPrice();
@@ -39,8 +41,15 @@ TextField {
 
     function parsePrice() {
         var price;
+        var t=productPrice.text;
+
+        if (isOptional && t==='') {
+            price=undefined;
+            return;
+        }
+
         try {
-            price=Number.fromLocaleString(productPrice.text);
+            price=Number.fromLocaleString(t);
             if (isNaN(price)) {
                 invalidPrice();
             }

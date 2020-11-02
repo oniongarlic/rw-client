@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 import net.ekotuki 1.0
 import "../components"
@@ -11,6 +11,8 @@ Rectangle {
     signal clicked(variant index)
     signal doubleClicked(variant index)
     signal pressAndHold(variant index)
+
+    property bool enablePickStatus: true
 
     height: c.height
 
@@ -57,7 +59,7 @@ Rectangle {
                 text: amount
             }
             Badge {
-                visible: type=="product"
+                visible: type=="product" && enablePickStatus
                 text: getPickedStatus(status)
                 function getPickedStatus(s) {
                     switch (s) {

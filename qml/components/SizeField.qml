@@ -1,5 +1,5 @@
-import QtQuick 2.9
-import QtQuick.Controls 2.4
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Layouts 1.3
 
 ColumnLayout {
@@ -16,6 +16,7 @@ ColumnLayout {
 
     property int minSize: allowZeroSize ? 0 : 1;
     property int maxSize: 999;
+    property bool hasSize: true
 
     property int minWeight: allowZeroWeight ? 0 : 1;
     property int maxWeight: 500;
@@ -28,19 +29,13 @@ ColumnLayout {
     property alias itemWeight: sizeWeight.value
     property bool weightIsSet: sizeWeight.value>0
 
+    // Physical size input, in Width/Depth/Height order
     SpinBoxLabel {
         id: sizeWidth
         from: minSize
         to: maxSize
+        visible: hasSize
         label: qsTr("Width")+" (cm)"
-        suffix: "cm"
-    }
-
-    SpinBoxLabel {
-        id: sizeHeight
-        from: minSize
-        to: maxSize
-        label: qsTr("Height")+" (cm)"
         suffix: "cm"
     }
 
@@ -48,7 +43,17 @@ ColumnLayout {
         id: sizeDepth
         from: minSize
         to: maxSize
+        visible: hasSize
         label: qsTr("Depth")+" (cm)"
+        suffix: "cm"
+    }
+
+    SpinBoxLabel {
+        id: sizeHeight
+        from: minSize
+        to: maxSize
+        visible: hasSize
+        label: qsTr("Height")+" (cm)"
         suffix: "cm"
     }
 

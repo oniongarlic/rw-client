@@ -1,5 +1,5 @@
-import QtQuick 2.6
-import QtQuick.Controls 2.0
+import QtQuick 2.12
+import QtQuick.Controls 2.12
 import QtQuick.Controls.Material 2.0
 import QtQuick.Layouts 1.3
 
@@ -15,9 +15,12 @@ ToolBar {
     // Automatic page pop on back button. Set to false to get signal instead
     property bool enableBackPop: true
 
+    property alias backIcon: backButton.icon.source
+
     property alias enableActionButton: actionBtn.enabled
     property alias visibleActionButton: actionBtn.visible
     property alias actionIcon: actionBtn.icon.source
+    property alias actionText: actionBtn.text
 
     property alias enableMenuButton: menuBtn.enabled
     property alias visibleMenuButton: menuBtn.visible
